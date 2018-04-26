@@ -1,0 +1,30 @@
+syntax = "proto3";
+package main;
+
+message Term {
+  enum Type {
+    Blank = 0;
+    IRI = 1;
+    Literal = 2;
+  }
+
+  Type type = 1;
+  uint64 prefix = 2;
+  uint64 suffix = 3;
+  string key = 4;
+  string literal = 5;
+}
+
+message Triple {
+  Term predicate = 1;
+  Term object = 2;
+}
+
+message Entry {
+  repeated Triple triples = 1;
+}
+
+message Compressed {
+  uint64 size = 1;
+  bytes data = 2;
+}
