@@ -21,12 +21,15 @@ type Prefix struct {
 	Key       bool
 	Suffixes  map[string]int
 	Index     int
+	SuffixMap []string
 }
 
 const (
-	eng   = "http://kaiko.getalp.org/dbnary/eng/"
-	press = true
-	test  = false
+	// CacheSize the size of the write cache
+	CacheSize = 1024
+	eng       = "http://kaiko.getalp.org/dbnary/eng/"
+	press     = true
+	test      = false
 )
 
 var (
@@ -38,6 +41,11 @@ func init() {
 	for i := range Prefixes {
 		prefix := &Prefixes[i]
 		prefix.Index = i
+		suffixes := prefix.Suffixes
+		prefix.SuffixMap = make([]string, len(suffixes))
+		for k, v := range suffixes {
+			prefix.SuffixMap[v] = k
+		}
 		prefixesURI[prefix.URI] = prefix
 		prefixesName[prefix.Name] = prefix
 	}
@@ -115,49 +123,67 @@ func build(db *bolt.DB) {
 	}
 
 	var entry *Entry
+	cache := make(map[string]*Entry)
 	writeEntry := func() {
-		value, err1 := proto.Marshal(entry)
-		if err1 != nil {
-			panic(err1)
+		key := getKey()
+		if key == "" {
+			fmt.Println("invalid key:", current)
+			return
 		}
-		if press {
-			output := &bytes.Buffer{}
-			Compress(value, output)
-			compressed := &Compressed{
-				Size: uint64(len(value)),
-				Data: output.Bytes(),
-			}
-			value, err1 = proto.Marshal(compressed)
+
+		cache[key] = entry
+
+		if len(cache) > CacheSize {
+			err1 := db.Update(func(tx *bolt.Tx) error {
+				for i, v := range cache {
+					value, err1 := proto.Marshal(v)
+					if err1 != nil {
+						return err1
+					}
+					if press {
+						output := &bytes.Buffer{}
+						Compress(value, output)
+						compressed := &Compressed{
+							Size: uint64(len(value)),
+							Data: output.Bytes(),
+						}
+						value, err1 = proto.Marshal(compressed)
+						if err1 != nil {
+							return err1
+						}
+					}
+
+					bucket := tx.Bucket([]byte("eng"))
+					err2 := bucket.Put([]byte(i), value)
+					if err2 != nil {
+						return err2
+					}
+				}
+
+				return nil
+			})
 			if err1 != nil {
 				panic(err1)
 			}
-		}
-
-		err1 = db.Update(func(tx *bolt.Tx) error {
-			bucket := tx.Bucket([]byte("eng"))
-			key := getKey()
-			if key == "" {
-				fmt.Println(current)
-				return nil
-			}
-			err2 := bucket.Put([]byte(key), value)
-			if err2 != nil {
-				return err2
-			}
-			return nil
-		})
-		if err1 != nil {
-			panic(err1)
+			cache = make(map[string]*Entry)
 		}
 	}
 	getEntry := func() {
+		key := getKey()
+		if key == "" {
+			fmt.Println("invalid key:", current)
+			return
+		}
+
+		cached := cache[key]
+		if cached != nil {
+			entry = cached
+			return
+		}
+
 		err1 := db.View(func(tx *bolt.Tx) error {
 			bucket := tx.Bucket([]byte("eng"))
-			key := getKey()
-			if key == "" {
-				fmt.Println(current)
-				return nil
-			}
+
 			value := bucket.Get([]byte(key))
 			if len(value) > 0 {
 				if press {
@@ -212,7 +238,7 @@ func build(db *bolt.DB) {
 
 var (
 	buildFlag = flag.Bool("build", false, "build the database")
-	printFlag = flag.Bool("print", false, "print")
+	printFlag = flag.String("print", "", "print")
 )
 
 func main() {
@@ -236,7 +262,7 @@ func main() {
 		build(db)
 	}
 
-	if *printFlag {
+	if *printFlag != "" {
 		var display func(key, spaces string, depth int)
 		display = func(key, spaces string, depth int) {
 			entry := &Entry{}
@@ -274,7 +300,7 @@ func main() {
 						link = term.Key
 						fmt.Print(term.Key)
 					} else {
-						fmt.Print(term.Suffix)
+						fmt.Print(prefix.SuffixMap[term.Suffix])
 					}
 				case Term_Literal:
 					fmt.Print(term.Literal)
@@ -288,12 +314,12 @@ func main() {
 				fmt.Print(" ")
 				link := printTerm(trpl.Object)
 				fmt.Print("\n")
-				if link != "" && depth < 5 {
+				if link != "" && depth < 0 {
 					display(link, spaces+" ", depth+1)
 				}
 			}
 		}
-		display("house", "", 0)
+		display(*printFlag, "", 0)
 	}
 
 	/*total := 0
