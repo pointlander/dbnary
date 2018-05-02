@@ -9,16 +9,25 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/knakk/rdf"
 )
 
+// Suffix is a suffix
+type Suffix struct {
+	Name  string
+	Index int
+	Count int
+}
+
 // Prefix is a rdf prefix
 type Prefix struct {
 	Name, URI string
 	Key       bool
-	Suffixes  map[string]int
+	Count     int
+	Suffixes  map[string]*Suffix
 }
 
 // Prefixes are a list of rdf prefixes for dbnary
@@ -104,7 +113,7 @@ func main() {
 	prefixes := make(map[string]*Prefix)
 	for i := range Prefixes {
 		prefix := &Prefixes[i]
-		prefix.Suffixes = make(map[string]int)
+		prefix.Suffixes = make(map[string]*Suffix)
 		prefixes[prefix.URI] = prefix
 	}
 	add := func(term rdf.Term) {
@@ -117,19 +126,30 @@ func main() {
 		if prefix == nil {
 			panic(fmt.Errorf("%v", term))
 		}
+		prefix.Count++
 		if prefix.Key {
 			return
 		}
 		suffix := iri[prefixIndex:]
-		_, ok := prefix.Suffixes[suffix]
+		s, ok := prefix.Suffixes[suffix]
 		if ok {
+			s.Count++
 			return
 		}
 		code := len(prefix.Suffixes)
-		prefix.Suffixes[suffix] = code
+		prefix.Suffixes[suffix] = &Suffix{
+			Name:  suffix,
+			Index: code,
+			Count: 1,
+		}
 	}
 	printPrefixes := func(w io.Writer) {
+		fmt.Fprintf(w, "// Copyright 2018 The dbnary Authors. All rights reserved.\n")
+		fmt.Fprintf(w, "// Use of this source code is governed by a BSD-style\n")
+		fmt.Fprintf(w, "// license that can be found in the LICENSE file.\n\n")
 		fmt.Fprintf(w, "package main\n")
+		fmt.Fprintf(w, "\n")
+		fmt.Fprintf(w, "// Prefixes are iri prefixes\n")
 		fmt.Fprintf(w, "var Prefixes = []Prefix{\n")
 		for i := range Prefixes {
 			fmt.Fprintf(w, " {\n")
@@ -139,13 +159,16 @@ func main() {
 				fmt.Fprintf(w, "  Key: %v,\n", Prefixes[i].Key)
 			}
 			if len(Prefixes[i].Suffixes) > 0 {
-				fmt.Fprintf(w, "  Suffixes: map[string]int{\n")
-				suffixes := make([]string, len(Prefixes[i].Suffixes))
-				for key, value := range Prefixes[i].Suffixes {
-					suffixes[value] = key
+				fmt.Fprintf(w, "  Suffixes: []string{\n")
+				suffixes := make([]*Suffix, len(Prefixes[i].Suffixes))
+				for _, value := range Prefixes[i].Suffixes {
+					suffixes[value.Index] = value
 				}
+				sort.Slice(suffixes, func(i, j int) bool {
+					return suffixes[i].Count > suffixes[j].Count
+				})
 				for j := range suffixes {
-					fmt.Fprintf(w, "   \"%v\": %v,\n", suffixes[j], j)
+					fmt.Fprintf(w, "   \"%v\",\n", suffixes[j].Name)
 				}
 				fmt.Fprintf(w, "  },\n")
 			}
@@ -193,5 +216,8 @@ func main() {
 		panic(err)
 	}
 	defer schema.Close()
+	sort.Slice(Prefixes, func(i, j int) bool {
+		return Prefixes[i].Count > Prefixes[j].Count
+	})
 	printPrefixes(schema)
 }

@@ -23,11 +23,11 @@ import (
 
 // Prefix is a rdf prefix
 type Prefix struct {
-	Name, URI string
-	Key       bool
-	Suffixes  map[string]int
-	Index     int
-	SuffixMap []string
+	Name, URI      string
+	Key            bool
+	Suffixes       []string
+	Index          int
+	SuffixesByName map[string]int
 }
 
 const (
@@ -39,8 +39,8 @@ const (
 )
 
 var (
-	prefixesURI  = make(map[string]*Prefix)
-	prefixesName = make(map[string]*Prefix)
+	prefixesByURI  = make(map[string]*Prefix)
+	prefixesByName = make(map[string]*Prefix)
 )
 
 func init() {
@@ -48,12 +48,12 @@ func init() {
 		prefix := &Prefixes[i]
 		prefix.Index = i
 		suffixes := prefix.Suffixes
-		prefix.SuffixMap = make([]string, len(suffixes))
+		prefix.SuffixesByName = make(map[string]int, len(suffixes))
 		for k, v := range suffixes {
-			prefix.SuffixMap[v] = k
+			prefix.SuffixesByName[v] = k
 		}
-		prefixesURI[prefix.URI] = prefix
-		prefixesName[prefix.Name] = prefix
+		prefixesByURI[prefix.URI] = prefix
+		prefixesByName[prefix.Name] = prefix
 	}
 }
 
@@ -93,11 +93,11 @@ func getTerm(term rdf.Term) *Term {
 		}
 		index++
 		prefix, suffix := s[:index], s[index:]
-		iri.Prefix = uint64(prefixesURI[prefix].Index)
+		iri.Prefix = uint64(prefixesByURI[prefix].Index)
 		if prefix == eng {
 			iri.Key = suffix
 		} else {
-			iri.Suffix = uint64(prefixesURI[prefix].Suffixes[suffix])
+			iri.Suffix = uint64(prefixesByURI[prefix].SuffixesByName[suffix])
 		}
 		return iri
 	case rdf.TermLiteral:
@@ -306,7 +306,7 @@ func main() {
 						link = term.Key
 						fmt.Print(term.Key)
 					} else {
-						fmt.Print(prefix.SuffixMap[term.Suffix])
+						fmt.Print(prefix.Suffixes[term.Suffix])
 					}
 				case Term_Literal:
 					fmt.Print(term.Literal)
