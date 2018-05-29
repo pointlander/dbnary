@@ -28,6 +28,10 @@ message Entry {
   repeated Triple triples = 1;
 }
 
+message Translation {
+  repeated string keys = 1;
+}
+
 message Compressed {
   uint64 size = 1;
   bytes data = 2;

@@ -112,6 +112,9 @@ func getTerm(term rdf.Term) *Term {
 }
 
 func build(db *bolt.DB) {
+	dbnaryID, isTranslationOfID :=
+		uint64(prefixesByName["dbnary"].Index), uint64(prefixesByName["dbnary"].SuffixesByName["isTranslationOf"])
+
 	input, err := os.Open("en_dbnary_ontolex.ttl.bz2")
 	if err != nil {
 		panic(err)
@@ -141,6 +144,7 @@ func build(db *bolt.DB) {
 
 		if len(cache) > CacheSize {
 			err1 := db.Update(func(tx *bolt.Tx) error {
+				bucket := tx.Bucket([]byte("eng"))
 				for i, v := range cache {
 					value, err1 := proto.Marshal(v)
 					if err1 != nil {
@@ -159,7 +163,6 @@ func build(db *bolt.DB) {
 						}
 					}
 
-					bucket := tx.Bucket([]byte("eng"))
 					err2 := bucket.Put([]byte(i), value)
 					if err2 != nil {
 						return err2
@@ -218,6 +221,7 @@ func build(db *bolt.DB) {
 		getEntry = func() {}
 	}
 
+	translations := make(map[string][]string)
 	triple, err := dec.Decode()
 	for err != io.EOF {
 		subj := triple.Subj.String()
@@ -236,10 +240,50 @@ func build(db *bolt.DB) {
 		}
 		entry.Triples = append(entry.Triples, trpl)
 
+		if trpl.Predicate.Prefix == dbnaryID &&
+			trpl.Predicate.Suffix == isTranslationOfID {
+			words := translations[trpl.Object.Key]
+			words = append(words, getKey())
+			translations[trpl.Object.Key] = words
+		}
+
 		triple, err = dec.Decode()
 	}
-
 	writeEntry()
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("eng_translation"))
+		translation := Translation{}
+		for k, v := range translations {
+			translation.Keys = v
+			value, err1 := proto.Marshal(&translation)
+			if err1 != nil {
+				return err1
+			}
+			if press {
+				output := &bytes.Buffer{}
+				Compress(value, output)
+				compressed := &Compressed{
+					Size: uint64(len(value)),
+					Data: output.Bytes(),
+				}
+				value, err1 = proto.Marshal(compressed)
+				if err1 != nil {
+					return err1
+				}
+			}
+
+			err2 := bucket.Put([]byte(k), value)
+			if err2 != nil {
+				return err2
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 var (
@@ -258,6 +302,10 @@ func main() {
 
 	err = db.Update(func(tx *bolt.Tx) error {
 		_, err1 := tx.CreateBucketIfNotExists([]byte("eng"))
+		if err1 != nil {
+			return err1
+		}
+		_, err1 = tx.CreateBucketIfNotExists([]byte("eng_translation"))
 		return err1
 	})
 	if err != nil {
@@ -266,12 +314,13 @@ func main() {
 
 	if *buildFlag {
 		build(db)
+		return
 	}
 
 	if *printFlag != "" {
 		var display func(key, spaces string, depth int)
 		display = func(key, spaces string, depth int) {
-			entry := &Entry{}
+			entry, translation := &Entry{}, &Translation{}
 			db.View(func(tx *bolt.Tx) error {
 				bucket := tx.Bucket([]byte("eng"))
 				value := bucket.Get([]byte(key))
@@ -286,6 +335,24 @@ func main() {
 						Decompress(bytes.NewReader(compressed.Data), value)
 					}
 					err1 := proto.Unmarshal(value, entry)
+					if err1 != nil {
+						return err1
+					}
+				}
+
+				bucket = tx.Bucket([]byte("eng_translation"))
+				value = bucket.Get([]byte(key))
+				if len(value) > 0 {
+					if press {
+						compressed := &Compressed{}
+						err1 := proto.Unmarshal(value, compressed)
+						if err1 != nil {
+							return err1
+						}
+						value = make([]byte, compressed.Size)
+						Decompress(bytes.NewReader(compressed.Data), value)
+					}
+					err1 := proto.Unmarshal(value, translation)
 					if err1 != nil {
 						return err1
 					}
@@ -324,18 +391,56 @@ func main() {
 					display(link, spaces+" ", depth+1)
 				}
 			}
+			for _, key := range translation.Keys {
+				fmt.Print(spaces, " translation ")
+				fmt.Println(key)
+			}
 		}
 		display(*printFlag, "", 0)
+		return
 	}
 
-	/*total := 0
+	/*total, translations := 0, make(map[string][]string)
+	dbnaryID, isTranslationOfID :=
+		uint64(prefixesByName["dbnary"].Index), uint64(prefixesByName["dbnary"].SuffixesByName["isTranslationOf"])
 	db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("eng"))
 		bucket.ForEach(func(k, v []byte) error {
 			total += len(v)
+			entry := &Entry{}
+			if press {
+				compressed := &Compressed{}
+				err1 := proto.Unmarshal(v, compressed)
+				if err1 != nil {
+					return err1
+				}
+				v = make([]byte, compressed.Size)
+				Decompress(bytes.NewReader(compressed.Data), v)
+			}
+			err1 := proto.Unmarshal(v, entry)
+			if err1 != nil {
+				return err1
+			}
+			for _, triple := range entry.Triples {
+				if triple.Predicate.Prefix == dbnaryID &&
+					triple.Predicate.Suffix == isTranslationOfID {
+					words := translations[triple.Object.Key]
+					words = append(words, string(k))
+					translations[triple.Object.Key] = words
+					break
+				}
+			}
 			return nil
 		})
 		return nil
 	})
-	fmt.Println(total)*/
+	fmt.Println(total)
+	fmt.Println("translations", len(translations))
+	max := 0
+	for _, v := range translations {
+		if length := len(v); length > max {
+			max = length
+		}
+	}
+	fmt.Println("max", max)*/
 }
