@@ -147,7 +147,7 @@ func main() {
 		fmt.Fprintf(w, "// Copyright 2018 The dbnary Authors. All rights reserved.\n")
 		fmt.Fprintf(w, "// Use of this source code is governed by a BSD-style\n")
 		fmt.Fprintf(w, "// license that can be found in the LICENSE file.\n\n")
-		fmt.Fprintf(w, "package main\n")
+		fmt.Fprintf(w, "package dbnary\n")
 		fmt.Fprintf(w, "\n")
 		fmt.Fprintf(w, "// Prefixes are iri prefixes\n")
 		fmt.Fprintf(w, "var Prefixes = []Prefix{\n")
