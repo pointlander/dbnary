@@ -5,8 +5,12 @@
 package main
 
 import (
+	"bytes"
 	"compress/bzip2"
 	"fmt"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"io"
 	"os"
 	"sort"
@@ -18,16 +22,16 @@ import (
 // Suffix is a suffix
 type Suffix struct {
 	Name  string
-	Index int
 	Count int
 }
 
 // Prefix is a rdf prefix
 type Prefix struct {
-	Name, URI string
-	Key       bool
-	Count     int
-	Suffixes  map[string]*Suffix
+	Name, URI    string
+	Key          bool
+	Count        int
+	Suffixes     map[string]*Suffix
+	SuffixesList []*Suffix
 }
 
 // Prefixes are a list of rdf prefixes for dbnary
@@ -104,12 +108,13 @@ var Prefixes = []Prefix{
 }
 
 const (
-	eng = "http://kaiko.getalp.org/dbnary/eng/"
+	file = "schema.go"
+	eng  = "http://kaiko.getalp.org/dbnary/eng/"
 	// Page is a wiktionary page
 	Page = "http://kaiko.getalp.org/dbnary#Page"
 )
 
-func main() {
+func generateSchema(out *bytes.Buffer) {
 	prefixes := make(map[string]*Prefix)
 	for i := range Prefixes {
 		prefix := &Prefixes[i]
@@ -136,10 +141,8 @@ func main() {
 			s.Count++
 			return
 		}
-		code := len(prefix.Suffixes)
 		prefix.Suffixes[suffix] = &Suffix{
 			Name:  suffix,
-			Index: code,
 			Count: 1,
 		}
 	}
@@ -160,9 +163,9 @@ func main() {
 			}
 			if len(Prefixes[i].Suffixes) > 0 {
 				fmt.Fprintf(w, "  Suffixes: []string{\n")
-				suffixes := make([]*Suffix, len(Prefixes[i].Suffixes))
-				for _, value := range Prefixes[i].Suffixes {
-					suffixes[value.Index] = value
+				suffixes := make([]*Suffix, 0, len(Prefixes[i].Suffixes))
+				for _, v := range Prefixes[i].Suffixes {
+					suffixes = append(suffixes, v)
 				}
 				sort.Slice(suffixes, func(i, j int) bool {
 					return suffixes[i].Count > suffixes[j].Count
@@ -171,10 +174,20 @@ func main() {
 					fmt.Fprintf(w, "   \"%v\",\n", suffixes[j].Name)
 				}
 				fmt.Fprintf(w, "  },\n")
+				Prefixes[i].SuffixesList = suffixes
 			}
 			fmt.Fprintf(w, " },\n")
 		}
 		fmt.Fprintf(w, "}\n")
+		fmt.Fprintf(w, "\nconst (\n")
+		for i := range Prefixes {
+			fmt.Fprintf(w, "  ID_%v = %v\n", Prefixes[i].Name, i)
+			suffixes := Prefixes[i].SuffixesList
+			for j := range suffixes {
+				fmt.Fprintf(w, "  ID_%v_%v = %v\n", Prefixes[i].Name, suffixes[j].Name, j)
+			}
+		}
+		fmt.Fprintf(w, ")\n")
 	}
 	/*Prefixes[0].Suffixes["test"] = 0
 	Prefixes[0].Suffixes["test1"] = 1
@@ -211,13 +224,32 @@ func main() {
 	fmt.Println("pages=", pages)
 	fmt.Println("definitions=", definitions)
 
-	schema, err := os.Create("schema.go")
-	if err != nil {
-		panic(err)
-	}
-	defer schema.Close()
 	sort.Slice(Prefixes, func(i, j int) bool {
 		return Prefixes[i].Count > Prefixes[j].Count
 	})
-	printPrefixes(schema)
+	printPrefixes(out)
+}
+
+func main() {
+	var buffer bytes.Buffer
+	generateSchema(&buffer)
+
+	out, err := os.Create(file)
+	if err != nil {
+		panic(err)
+	}
+	defer out.Close()
+
+	fileSet := token.NewFileSet()
+	code, err := parser.ParseFile(fileSet, file, &buffer, parser.ParseComments)
+	if err != nil {
+		buffer.WriteTo(out)
+		panic(fmt.Errorf("%v: %v", file, err))
+	}
+	formatter := printer.Config{Mode: printer.TabIndent | printer.UseSpaces, Tabwidth: 8}
+	err = formatter.Fprint(out, fileSet, code)
+	if err != nil {
+		buffer.WriteTo(out)
+		panic(fmt.Errorf("%v: %v", file, err))
+	}
 }

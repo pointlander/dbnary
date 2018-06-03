@@ -63,10 +63,6 @@ func getTerm(term rdf.Term) *dbnary.Term {
 }
 
 func build(db *dbnary.DB) {
-	dbnaryID, isTranslationOfID :=
-		uint64(dbnary.PrefixesByName["dbnary"].Index),
-		uint64(dbnary.PrefixesByName["dbnary"].SuffixesByName["isTranslationOf"])
-
 	input, err := os.Open("en_dbnary_ontolex.ttl.bz2")
 	if err != nil {
 		panic(err)
@@ -178,8 +174,8 @@ func build(db *dbnary.DB) {
 		}
 		entry.Triples = append(entry.Triples, trpl)
 
-		if trpl.Predicate.Prefix == dbnaryID &&
-			trpl.Predicate.Suffix == isTranslationOfID {
+		if trpl.Predicate.Prefix == dbnary.ID_dbnary &&
+			trpl.Predicate.Suffix == dbnary.ID_dbnary_isTranslationOf {
 			words := translations[trpl.Object.Key]
 			words = append(words, getKey())
 			translations[trpl.Object.Key] = words
