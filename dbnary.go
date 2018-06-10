@@ -8,6 +8,7 @@ package dbnary
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"sort"
 	"strconv"
@@ -134,6 +135,60 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 		return nil
 	})
 	return
+}
+
+// PrintEntry prints the entry
+func (db *DB) PrintEntry(key, spaces string, max, depth int) {
+	fmt.Println(key)
+	entry, err := db.GetEntry(key)
+	if err != nil {
+		panic(err)
+	}
+	translation, err := db.GetTranslation(key)
+	if err != nil {
+		panic(err)
+	}
+
+	printTerm := func(term *Term) string {
+		link := ""
+		switch term.Type {
+		case Term_Blank:
+			link = term.Key
+			fmt.Print(term.Key)
+		case Term_IRI:
+			prefix := Prefixes[term.Prefix]
+			fmt.Print(prefix.Name)
+			fmt.Print(":")
+			if prefix.Name == "eng" {
+				link = term.Key
+				fmt.Print(term.Key)
+			} else {
+				fmt.Print(prefix.Suffixes[term.Suffix])
+			}
+		case Term_Literal:
+			fmt.Print(term.Literal)
+		}
+
+		return link
+	}
+	if entry != nil {
+		for _, trpl := range entry.Triples {
+			fmt.Print(spaces)
+			printTerm(trpl.Predicate)
+			fmt.Print(" ")
+			link := printTerm(trpl.Object)
+			fmt.Print("\n")
+			if link != "" && depth < max {
+				db.PrintEntry(link, spaces+" ", max, depth+1)
+			}
+		}
+	}
+	if translation != nil {
+		for _, key := range translation.Keys {
+			fmt.Print(spaces, " translation ")
+			fmt.Println(key)
+		}
+	}
 }
 
 // Word a word
