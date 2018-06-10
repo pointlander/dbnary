@@ -144,7 +144,8 @@ type Word struct {
 
 // Part is a part of speech
 type Part struct {
-	Definitions []string
+	Definitions  []string
+	Translations map[string][]string
 }
 
 // LookupWord looks a word up in the dictionary
@@ -212,9 +213,40 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		sort.Slice(parts, func(i, j int) bool {
 			return parts[i].sense < parts[j].sense
 		})
-		part := &Part{}
+		part := &Part{
+			Translations: make(map[string][]string),
+		}
 		for _, p := range parts {
 			part.Definitions = append(part.Definitions, p.definition)
+		}
+		translations, err := db.GetTranslation(a)
+		if err != nil {
+			return
+		}
+		if translations != nil {
+			for _, translation := range translations.Keys {
+				translationEntry, err := db.GetEntry(translation)
+				if err != nil {
+					return err
+				}
+				if translationEntry == nil {
+					continue
+				}
+				language, form := "", ""
+				for _, triple := range translationEntry.Triples {
+					if triple.Predicate.Match(ID_dbnary, ID_dbnary_targetLanguage) {
+						language = PrefixesByName["lexvo"].Suffixes[triple.Object.Suffix]
+					} else if triple.Predicate.Match(ID_dbnary, ID_dbnary_writtenForm) {
+						form = triple.Object.Literal
+					}
+				}
+				if language == "" || form == "" {
+					continue
+				}
+				forms := part.Translations[language]
+				forms = append(forms, form)
+				part.Translations[language] = forms
+			}
 		}
 		word.Parts[PrefixesByName["lexinfo"].Suffixes[partOfSpeech]] = part
 		return
