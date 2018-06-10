@@ -174,8 +174,7 @@ func build(db *dbnary.DB) {
 		}
 		entry.Triples = append(entry.Triples, trpl)
 
-		if trpl.Predicate.Prefix == dbnary.ID_dbnary &&
-			trpl.Predicate.Suffix == dbnary.ID_dbnary_isTranslationOf {
+		if trpl.Predicate.Match(dbnary.ID_dbnary, dbnary.ID_dbnary_isTranslationOf) {
 			words := translations[trpl.Object.Key]
 			words = append(words, getKey())
 			translations[trpl.Object.Key] = words
