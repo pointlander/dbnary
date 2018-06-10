@@ -193,14 +193,14 @@ func (db *DB) PrintEntry(key, spaces string, max, depth int) {
 
 // Word a word
 type Word struct {
-	Word  string
-	Parts map[string]*Part
+	Word  string           `json:"word"`
+	Parts map[string]*Part `json:"parts"`
 }
 
 // Part is a part of speech
 type Part struct {
-	Definitions  []string
-	Translations map[string][]string
+	Definitions  []string            `json:"definitions"`
+	Translations map[string][]string `json:"translations"`
 }
 
 // LookupWord looks a word up in the dictionary
