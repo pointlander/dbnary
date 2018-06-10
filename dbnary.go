@@ -9,6 +9,8 @@ package dbnary
 import (
 	"bytes"
 	"io"
+	"sort"
+	"strconv"
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
@@ -65,6 +67,11 @@ func Decompress(input io.Reader, output []byte) {
 	channel <- output
 	close(channel)
 	compress.BijectiveBurrowsWheelerDecoder(channel).MoveToFrontDecoder().FilteredAdaptiveBitDecoder().Decode(input)
+}
+
+// Match returns true if prefix and suffix match
+func (t *Term) Match(prefix, suffix uint64) bool {
+	return t.Prefix == prefix && t.Suffix == suffix
 }
 
 // DB is a dbnary database
@@ -126,6 +133,105 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 		}
 		return nil
 	})
+	return
+}
+
+// Word a word
+type Word struct {
+	Word  string
+	Parts map[string]*Part
+}
+
+// Part is a part of speech
+type Part struct {
+	Definitions []string
+}
+
+// LookupWord looks a word up in the dictionary
+func (db *DB) LookupWord(a string) (word *Word, err error) {
+	word = &Word{
+		Word:  a,
+		Parts: make(map[string]*Part),
+	}
+	getDefinition := func(a string) (definition string, err error) {
+		definitionEntry, err := db.GetEntry(a)
+		if err != nil || definitionEntry == nil {
+			return
+		}
+		for _, triple := range definitionEntry.Triples {
+			if triple.Predicate.Match(ID_rdf, ID_rdf_value) {
+				definition = triple.Object.Literal
+				return
+			}
+		}
+		return
+	}
+	getPart := func(a string) (err error) {
+		entry, err := db.GetEntry(a)
+		if err != nil || entry == nil {
+			return
+		}
+		partOfSpeech := -1
+		type Sense struct {
+			definition string
+			sense      int
+		}
+		var parts []Sense
+		getSense := func(a string) (err error) {
+			senseEntry, err := db.GetEntry(a)
+			if err != nil || senseEntry == nil {
+				return
+			}
+			definition, sense := "", 0
+			for _, triple := range senseEntry.Triples {
+				if triple.Predicate.Match(ID_skos, ID_skos_definition) {
+					definition, err = getDefinition(triple.Object.Key)
+					if err != nil {
+						return
+					}
+				} else if triple.Predicate.Match(ID_dbnary, ID_dbnary_senseNumber) {
+					sense, err = strconv.Atoi(triple.Object.Literal)
+					if err != nil {
+						return
+					}
+				}
+			}
+			parts = append(parts, Sense{definition, sense})
+			return
+		}
+		for _, triple := range entry.Triples {
+			if triple.Predicate.Match(ID_lexinfo, ID_lexinfo_partOfSpeech) {
+				partOfSpeech = int(triple.Object.Suffix)
+			} else if triple.Predicate.Match(ID_ontolex, ID_ontolex_LexicalSense) {
+				err = getSense(triple.Object.Key)
+				if err != nil {
+					return
+				}
+			}
+		}
+		sort.Slice(parts, func(i, j int) bool {
+			return parts[i].sense < parts[j].sense
+		})
+		part := &Part{}
+		for _, p := range parts {
+			part.Definitions = append(part.Definitions, p.definition)
+		}
+		word.Parts[PrefixesByName["lexinfo"].Suffixes[partOfSpeech]] = part
+		return
+	}
+
+	entry, err := db.GetEntry(a)
+	if err != nil || entry == nil {
+		return
+	}
+	for _, triple := range entry.Triples {
+		if triple.Predicate.Match(ID_dbnary, ID_dbnary_describes) {
+			err = getPart(triple.Object.Key)
+			if err != nil {
+				return
+			}
+		}
+	}
 	return
 }
 

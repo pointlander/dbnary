@@ -5,13 +5,17 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 
 	"github.com/pointlander/dbnary"
 )
 
-var printFlag = flag.String("print", "", "entry to print")
+var (
+	printFlag = flag.String("print", "", "entry to print")
+	lookup    = flag.String("lookup", "", "lookup a word")
+)
 
 func main() {
 	flag.Parse()
@@ -72,5 +76,21 @@ func main() {
 			}
 		}
 	}
-	display(*printFlag, "", 0)
+
+	if *printFlag != "" {
+		display(*printFlag, "", 0)
+		return
+	}
+
+	if *lookup != "" {
+		word, err := db.LookupWord(*lookup)
+		if err != nil {
+			panic(err)
+		}
+		data, err := json.MarshalIndent(word, "", " ")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(data))
+	}
 }
