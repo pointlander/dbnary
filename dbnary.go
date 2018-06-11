@@ -197,12 +197,13 @@ func (db *DB) PrintEntry(key, spaces string, max, depth int) {
 
 // Word a word
 type Word struct {
-	Word  string           `json:"word"`
-	Parts map[string]*Part `json:"parts"`
+	Word  string  `json:"word"`
+	Parts []*Part `json:"parts"`
 }
 
 // Part is a part of speech
 type Part struct {
+	Part         string              `json:"part"`
 	Definitions  []string            `json:"definitions"`
 	Translations map[string][]string `json:"translations"`
 }
@@ -211,7 +212,7 @@ type Part struct {
 func (db *DB) LookupWord(a string) (word *Word, err error) {
 	word = &Word{
 		Word:  a,
-		Parts: make(map[string]*Part),
+		Parts: make([]*Part, 0),
 	}
 	getDefinition := func(a string) (definition string, err error) {
 		definitionEntry, err := db.GetEntry(a)
@@ -234,7 +235,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		partOfSpeech := -1
 		type Sense struct {
 			definition string
-			sense      int
+			sense      float64
 		}
 		var parts []Sense
 		getSense := func(a string) (err error) {
@@ -242,7 +243,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 			if err != nil || senseEntry == nil {
 				return
 			}
-			definition, sense := "", 0
+			definition, sense := "", 0.0
 			for _, triple := range senseEntry.Triples {
 				if triple.Predicate.Match(ID_skos, ID_skos_definition) {
 					definition, err = getDefinition(triple.Object.Key)
@@ -250,7 +251,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 						return
 					}
 				} else if triple.Predicate.Match(ID_dbnary, ID_dbnary_senseNumber) {
-					sense, err = strconv.Atoi(triple.Object.Literal)
+					sense, err = strconv.ParseFloat(triple.Object.Literal, 64)
 					if err != nil {
 						return
 					}
@@ -273,6 +274,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 			return parts[i].sense < parts[j].sense
 		})
 		part := &Part{
+			Part:         PrefixesByName["lexinfo"].Suffixes[partOfSpeech],
 			Translations: make(map[string][]string),
 		}
 		for _, p := range parts {
@@ -307,7 +309,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 				part.Translations[language] = forms
 			}
 		}
-		word.Parts[PrefixesByName["lexinfo"].Suffixes[partOfSpeech]] = part
+		word.Parts = append(word.Parts, part)
 		return
 	}
 
