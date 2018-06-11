@@ -125,6 +125,10 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 				}
 				value = make([]byte, compressed.Size)
 				Decompress(bytes.NewReader(compressed.Data), value)
+			} else {
+				cp := make([]byte, len(value))
+				copy(cp, value)
+				value = cp
 			}
 			entry = &Entry{}
 			err1 := proto.Unmarshal(value, entry)
@@ -336,6 +340,10 @@ func (db *DB) GetTranslation(key string) (translation *Translation, err error) {
 				}
 				value = make([]byte, compressed.Size)
 				Decompress(bytes.NewReader(compressed.Data), value)
+			} else {
+				cp := make([]byte, len(value))
+				copy(cp, value)
+				value = cp
 			}
 			translation = &Translation{}
 			err1 := proto.Unmarshal(value, translation)
