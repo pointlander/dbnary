@@ -168,16 +168,18 @@ func build(db *dbnary.DB) {
 			getEntry()
 		}
 
-		trpl := &dbnary.Triple{
-			Predicate: getTerm(triple.Pred),
-			Object:    getTerm(triple.Obj),
-		}
-		entry.Triples = append(entry.Triples, trpl)
+		if entry != nil {
+			trpl := &dbnary.Triple{
+				Predicate: getTerm(triple.Pred),
+				Object:    getTerm(triple.Obj),
+			}
+			entry.Triples = append(entry.Triples, trpl)
 
-		if trpl.Predicate.Match(dbnary.ID_dbnary, dbnary.ID_dbnary_isTranslationOf) {
-			words := translations[trpl.Object.Key]
-			words = append(words, getKey())
-			translations[trpl.Object.Key] = words
+			if trpl.Predicate.Match(dbnary.ID_dbnary, dbnary.ID_dbnary_isTranslationOf) {
+				words := translations[trpl.Object.Key]
+				words = append(words, getKey())
+				translations[trpl.Object.Key] = words
+			}
 		}
 
 		triple, err = dec.Decode()
