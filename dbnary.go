@@ -263,7 +263,8 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		for _, triple := range entry.Triples {
 			if triple.Predicate.Match(ID_lexinfo, ID_lexinfo_partOfSpeech) {
 				partOfSpeech = int(triple.Object.Suffix)
-			} else if triple.Predicate.Match(ID_ontolex, ID_ontolex_LexicalSense) {
+			} else if triple.Predicate.Match(ID_ontolex, ID_ontolex_LexicalSense) ||
+				triple.Predicate.Match(ID_ontolex, ID_ontolex_sense) {
 				err = getSense(triple.Object.Key)
 				if err != nil {
 					return
