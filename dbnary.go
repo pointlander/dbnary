@@ -37,6 +37,16 @@ var (
 	PrefixesByURI = make(map[string]*Prefix)
 	// PrefixesByName are the prefixes indexed by name
 	PrefixesByName = make(map[string]*Prefix)
+	// Relations are types of word relations
+	Relations = map[uint64]bool{
+		ID_dbnary_synonym:  true,
+		ID_dbnary_hyponym:  true,
+		ID_dbnary_antonym:  true,
+		ID_dbnary_hypernym: true,
+		ID_dbnary_meronym:  true,
+		ID_dbnary_holonym:  true,
+		ID_dbnary_troponym: true,
+	}
 )
 
 func init() {
@@ -197,8 +207,9 @@ func (db *DB) PrintEntry(key, spaces string, max, depth int) {
 
 // Word a word
 type Word struct {
-	Word  string  `json:"word"`
-	Parts []*Part `json:"parts"`
+	Word      string              `json:"word"`
+	Relations map[string][]string `json:"relations"`
+	Parts     []*Part             `json:"parts"`
 }
 
 // Part is a part of speech
@@ -211,8 +222,9 @@ type Part struct {
 // LookupWord looks a word up in the dictionary
 func (db *DB) LookupWord(a string) (word *Word, err error) {
 	word = &Word{
-		Word:  a,
-		Parts: make([]*Part, 0),
+		Word:      a,
+		Relations: make(map[string][]string),
+		Parts:     make([]*Part, 0),
 	}
 	getDefinition := func(a string) (definition string, err error) {
 		definitionEntry, err := db.GetEntry(a)
@@ -324,6 +336,15 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 			if err != nil {
 				return
 			}
+		} else if triple.Predicate.Prefix == ID_dbnary &&
+			Relations[triple.Predicate.Suffix] {
+			relation := Prefixes[triple.Predicate.Prefix].Suffixes[triple.Predicate.Suffix]
+			relations := word.Relations[relation]
+			if relations == nil {
+				relations = make([]string, 0, 1)
+			}
+			relations = append(relations, triple.Object.Key)
+			word.Relations[relation] = relations
 		}
 	}
 	return
