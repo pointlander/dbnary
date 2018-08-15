@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"sort"
 	"strconv"
 
@@ -21,6 +23,8 @@ import (
 const (
 	// Press determines if the database is compressed
 	Press = true
+	// TTLURL is the domain of dbnary
+	TTLURL = "http://kaiko.getalp.org/static/ontolex/latest/"
 )
 
 // Prefix is a rdf prefix
@@ -33,6 +37,30 @@ type Prefix struct {
 }
 
 var (
+	// TTLFiles are the dbnary files
+	TTLFiles = []string{
+		"bg_dbnary_ontolex.ttl.bz2",
+		"de_dbnary_ontolex.ttl.bz2",
+		"el_dbnary_ontolex.ttl.bz2",
+		"en_dbnary_ontolex.ttl.bz2",
+		"es_dbnary_ontolex.ttl.bz2",
+		"fi_dbnary_ontolex.ttl.bz2",
+		"fr_dbnary_ontolex.ttl.bz2",
+		"it_dbnary_ontolex.ttl.bz2",
+		"id_dbnary_ontolex.ttl.bz2",
+		"ja_dbnary_ontolex.ttl.bz2",
+		"la_dbnary_ontolex.ttl.bz2",
+		"lt_dbnary_ontolex.ttl.bz2",
+		"mg_dbnary_ontolex.ttl.bz2",
+		"nl_dbnary_ontolex.ttl.bz2",
+		"no_dbnary_ontolex.ttl.bz2",
+		"pl_dbnary_ontolex.ttl.bz2",
+		"pt_dbnary_ontolex.ttl.bz2",
+		"ru_dbnary_ontolex.ttl.bz2",
+		"sh_dbnary_ontolex.ttl.bz2",
+		"sv_dbnary_ontolex.ttl.bz2",
+		"tr_dbnary_ontolex.ttl.bz2",
+	}
 	// PrefixesByURI are the prefixes indexed by URI
 	PrefixesByURI = make(map[string]*Prefix)
 	// PrefixesByName are the prefixes indexed by name
@@ -61,6 +89,53 @@ func init() {
 		PrefixesByURI[prefix.URI] = prefix
 		PrefixesByName[prefix.Name] = prefix
 	}
+}
+
+// Download downloads the dbnary files
+func Download() {
+	for _, file := range TTLFiles {
+		head, err := http.Head(TTLURL + file)
+		if err != nil {
+			panic(err)
+		}
+		size, err := strconv.Atoi(head.Header.Get("Content-Length"))
+		if err != nil {
+			panic(err)
+		}
+		last, err := http.ParseTime(head.Header.Get("Last-Modified"))
+		if err != nil {
+			panic(err)
+		}
+		head.Body.Close()
+		stat, err := os.Stat("./" + file)
+		if err != nil || stat.ModTime().Before(last) || stat.Size() != int64(size) {
+			fmt.Println("downloading", file, size, last)
+			response, err := http.Get(TTLURL + file)
+			if err != nil {
+				panic(err)
+			}
+
+			out, err := os.Create("./" + file)
+			if err != nil {
+				panic(err)
+			}
+
+			_, err = io.Copy(out, response.Body)
+			if err != nil {
+				panic(err)
+			}
+			response.Body.Close()
+			out.Close()
+
+			err = os.Chtimes("./"+file, last, last)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			fmt.Println("skipping", file, size, last)
+		}
+	}
+	return
 }
 
 // Compress compresses some data
