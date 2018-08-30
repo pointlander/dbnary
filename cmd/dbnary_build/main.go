@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"compress/bzip2"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -21,8 +22,6 @@ import (
 const (
 	// CacheSize the size of the write cache
 	CacheSize = 1024
-	eng       = "http://kaiko.getalp.org/dbnary/eng/"
-	test      = false
 )
 
 func getTerm(term rdf.Term) *dbnary.Term {
@@ -43,12 +42,12 @@ func getTerm(term rdf.Term) *dbnary.Term {
 			panic("invalid iri")
 		}
 		index++
-		prefix, suffix := s[:index], s[index:]
-		iri.Prefix = uint64(dbnary.PrefixesByURI[prefix].Index)
-		if prefix == eng {
+		prefix, suffix := dbnary.PrefixesByURI[s[:index]], s[index:]
+		iri.Prefix = uint64(prefix.Index)
+		if prefix.Key {
 			iri.Key = suffix
 		} else {
-			iri.Suffix = uint64(dbnary.PrefixesByURI[prefix].SuffixesByName[suffix])
+			iri.Suffix = uint64(prefix.SuffixesByName[suffix])
 		}
 		return iri
 	case rdf.TermLiteral:
@@ -62,8 +61,13 @@ func getTerm(term rdf.Term) *dbnary.Term {
 	return nil
 }
 
-func build(db *dbnary.DB) {
-	input, err := os.Open("en_dbnary_ontolex.ttl.bz2")
+func build(db *dbnary.DB, file dbnary.TTLFile) {
+	fmt.Println(file.Name, file.Key)
+	var (
+		primary     = []byte(file.Key)
+		translation = []byte(fmt.Sprintf("%s_translation", file.Key))
+	)
+	input, err := os.Open(file.Name)
 	if err != nil {
 		panic(err)
 	}
@@ -72,17 +76,27 @@ func build(db *dbnary.DB) {
 	dec := rdf.NewTripleDecoder(ttl, rdf.Turtle)
 
 	current := ""
-	getKey := func() string {
-		if strings.HasPrefix(current, eng) {
-			return strings.TrimPrefix(current, eng)
+	getKey := func() (string, bool) {
+		index := strings.LastIndexAny(current, "/#")
+		if index == -1 {
+			return current, true
 		}
-		return current
+
+		prefix := current[:index+1]
+		if dbnary.PrefixesByURI[prefix].Key {
+			return strings.TrimPrefix(current, prefix), true
+		}
+
+		return "", false
 	}
 
 	var entry *dbnary.Entry
 	cache := make(map[string]*dbnary.Entry)
 	writeEntry := func() {
-		key := getKey()
+		key, valid := getKey()
+		if !valid {
+			return
+		}
 		if key == "" {
 			fmt.Println("invalid key:", current)
 			return
@@ -94,7 +108,7 @@ func build(db *dbnary.DB) {
 		}
 
 		err1 := db.Update(func(tx *bolt.Tx) error {
-			bucket := tx.Bucket([]byte("eng"))
+			bucket := tx.Bucket(primary)
 			for i, v := range cache {
 				value, err1 := proto.Marshal(v)
 				if err1 != nil {
@@ -127,7 +141,10 @@ func build(db *dbnary.DB) {
 		cache = make(map[string]*dbnary.Entry)
 	}
 	getEntry := func() {
-		key := getKey()
+		key, valid := getKey()
+		if !valid {
+			return
+		}
 		if key == "" {
 			fmt.Println("invalid key:", current)
 			return
@@ -150,7 +167,7 @@ func build(db *dbnary.DB) {
 		}
 	}
 
-	if test {
+	if *test {
 		writeEntry = func() {}
 		getEntry = func() {}
 	}
@@ -177,7 +194,8 @@ func build(db *dbnary.DB) {
 
 			if trpl.Predicate.Match(dbnary.ID_dbnary, dbnary.ID_dbnary_isTranslationOf) {
 				words := translations[trpl.Object.Key]
-				words = append(words, getKey())
+				key, _ := getKey()
+				words = append(words, key)
 				translations[trpl.Object.Key] = words
 			}
 		}
@@ -187,7 +205,7 @@ func build(db *dbnary.DB) {
 	writeEntry()
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("eng_translation"))
+		bucket := tx.Bucket(translation)
 		translation := dbnary.Translation{}
 		for k, v := range translations {
 			translation.Keys = v
@@ -221,8 +239,14 @@ func build(db *dbnary.DB) {
 	}
 }
 
+var test = flag.Bool("test", false, "test mode")
+
 func main() {
+	flag.Parse()
+
 	db := dbnary.OpenDB("dbnary.db", false)
 	defer db.Close()
-	build(db)
+	for _, file := range dbnary.TTLFiles {
+		build(db, file)
+	}
 }

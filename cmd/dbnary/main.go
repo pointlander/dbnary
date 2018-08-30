@@ -16,6 +16,7 @@ var (
 	print  = flag.String("print", "", "entry to print")
 	depth  = flag.Int("depth", 0, "the depth to print entries")
 	lookup = flag.String("lookup", "", "lookup a word")
+	lang   = flag.String("lang", "eng", "language to use")
 )
 
 func main() {
@@ -25,12 +26,12 @@ func main() {
 	defer db.Close()
 
 	if *print != "" {
-		db.PrintEntry(*print, "", *depth, 0)
+		db.PrintEntry(*print, "", *lang, *depth, 0)
 		return
 	}
 
 	if *lookup != "" {
-		word, err := db.LookupWord(*lookup)
+		word, err := db.LookupWordForLanguage(*lookup, *lang)
 		if err != nil {
 			panic(err)
 		}

@@ -36,30 +36,35 @@ type Prefix struct {
 	SuffixesByName map[string]int
 }
 
+// TTLFile is a ttl file
+type TTLFile struct {
+	Name, Key, Full string
+}
+
 var (
 	// TTLFiles are the dbnary files
-	TTLFiles = []string{
-		"bg_dbnary_ontolex.ttl.bz2",
-		"de_dbnary_ontolex.ttl.bz2",
-		"el_dbnary_ontolex.ttl.bz2",
-		"en_dbnary_ontolex.ttl.bz2",
-		"es_dbnary_ontolex.ttl.bz2",
-		"fi_dbnary_ontolex.ttl.bz2",
-		"fr_dbnary_ontolex.ttl.bz2",
-		"it_dbnary_ontolex.ttl.bz2",
-		"id_dbnary_ontolex.ttl.bz2",
-		"ja_dbnary_ontolex.ttl.bz2",
-		"la_dbnary_ontolex.ttl.bz2",
-		"lt_dbnary_ontolex.ttl.bz2",
-		"mg_dbnary_ontolex.ttl.bz2",
-		"nl_dbnary_ontolex.ttl.bz2",
-		"no_dbnary_ontolex.ttl.bz2",
-		"pl_dbnary_ontolex.ttl.bz2",
-		"pt_dbnary_ontolex.ttl.bz2",
-		"ru_dbnary_ontolex.ttl.bz2",
-		"sh_dbnary_ontolex.ttl.bz2",
-		"sv_dbnary_ontolex.ttl.bz2",
-		"tr_dbnary_ontolex.ttl.bz2",
+	TTLFiles = []TTLFile{
+		{"bg_dbnary_ontolex.ttl.bz2", "bul", "bulgarian"},
+		{"de_dbnary_ontolex.ttl.bz2", "deu", "german"},
+		{"el_dbnary_ontolex.ttl.bz2", "ell", "greek"},
+		{"en_dbnary_ontolex.ttl.bz2", "eng", "english"},
+		{"es_dbnary_ontolex.ttl.bz2", "spa", "spanish"},
+		{"fi_dbnary_ontolex.ttl.bz2", "fin", "finnish"},
+		{"fr_dbnary_ontolex.ttl.bz2", "fra", "french"},
+		{"id_dbnary_ontolex.ttl.bz2", "ind", "indonesian"},
+		{"it_dbnary_ontolex.ttl.bz2", "ita", "italian"},
+		{"ja_dbnary_ontolex.ttl.bz2", "jpn", "japanese"},
+		{"la_dbnary_ontolex.ttl.bz2", "lat", "latin"},
+		{"lt_dbnary_ontolex.ttl.bz2", "lit", "lithuanian"},
+		{"mg_dbnary_ontolex.ttl.bz2", "mlg", "malagasy"},
+		{"nl_dbnary_ontolex.ttl.bz2", "nld", "dutch"},
+		{"no_dbnary_ontolex.ttl.bz2", "nor", "norwegian"},
+		{"pl_dbnary_ontolex.ttl.bz2", "pol", "polish"},
+		{"pt_dbnary_ontolex.ttl.bz2", "por", "portuguese"},
+		{"ru_dbnary_ontolex.ttl.bz2", "rus", "russian"},
+		{"sh_dbnary_ontolex.ttl.bz2", "hbs", "serbo-croatian"},
+		{"sv_dbnary_ontolex.ttl.bz2", "swe", "swedish"},
+		{"tr_dbnary_ontolex.ttl.bz2", "tur", "turkish"},
 	}
 	// PrefixesByURI are the prefixes indexed by URI
 	PrefixesByURI = make(map[string]*Prefix)
@@ -94,7 +99,7 @@ func init() {
 // Download downloads the dbnary files
 func Download() {
 	for _, file := range TTLFiles {
-		head, err := http.Head(TTLURL + file)
+		head, err := http.Head(TTLURL + file.Name)
 		if err != nil {
 			panic(err)
 		}
@@ -107,15 +112,15 @@ func Download() {
 			panic(err)
 		}
 		head.Body.Close()
-		stat, err := os.Stat("./" + file)
+		stat, err := os.Stat("./" + file.Name)
 		if err != nil || stat.ModTime().Before(last) || stat.Size() != int64(size) {
 			fmt.Println("downloading", file, size, last)
-			response, err := http.Get(TTLURL + file)
+			response, err := http.Get(TTLURL + file.Name)
 			if err != nil {
 				panic(err)
 			}
 
-			out, err := os.Create("./" + file)
+			out, err := os.Create("./" + file.Name)
 			if err != nil {
 				panic(err)
 			}
@@ -127,7 +132,7 @@ func Download() {
 			response.Body.Close()
 			out.Close()
 
-			err = os.Chtimes("./"+file, last, last)
+			err = os.Chtimes("./"+file.Name, last, last)
 			if err != nil {
 				panic(err)
 			}
@@ -174,12 +179,17 @@ func OpenDB(file string, readOnly bool) *DB {
 
 	if !readOnly {
 		err = db.Update(func(tx *bolt.Tx) error {
-			_, err1 := tx.CreateBucketIfNotExists([]byte("eng"))
-			if err1 != nil {
-				return err1
+			for _, file := range TTLFiles {
+				_, err1 := tx.CreateBucketIfNotExists([]byte(file.Key))
+				if err1 != nil {
+					return err1
+				}
+				_, err1 = tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_translation", file.Key)))
+				if err1 != nil {
+					return err1
+				}
 			}
-			_, err1 = tx.CreateBucketIfNotExists([]byte("eng_translation"))
-			return err1
+			return nil
 		})
 		if err != nil {
 			panic(err)
@@ -198,8 +208,13 @@ func (db *DB) Close() {
 
 // GetEntry looks up an entry
 func (db *DB) GetEntry(key string) (entry *Entry, err error) {
+	return db.GetEntryForLanguage(key, "eng")
+}
+
+// GetEntryForLanguage looks up an entry for a given language
+func (db *DB) GetEntryForLanguage(key, language string) (entry *Entry, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("eng"))
+		bucket := tx.Bucket([]byte(language))
 		value := bucket.Get([]byte(key))
 		if len(value) > 0 {
 			if Press {
@@ -227,13 +242,13 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 }
 
 // PrintEntry prints the entry
-func (db *DB) PrintEntry(key, spaces string, max, depth int) {
+func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 	fmt.Println(key)
-	entry, err := db.GetEntry(key)
+	entry, err := db.GetEntryForLanguage(key, lang)
 	if err != nil {
 		panic(err)
 	}
-	translation, err := db.GetTranslation(key)
+	translation, err := db.GetTranslationForLanguage(key, lang)
 	if err != nil {
 		panic(err)
 	}
@@ -248,7 +263,7 @@ func (db *DB) PrintEntry(key, spaces string, max, depth int) {
 			prefix := Prefixes[term.Prefix]
 			fmt.Print(prefix.Name)
 			fmt.Print(":")
-			if prefix.Name == "eng" {
+			if prefix.Name == lang {
 				link = term.Key
 				fmt.Print(term.Key)
 			} else {
@@ -268,7 +283,7 @@ func (db *DB) PrintEntry(key, spaces string, max, depth int) {
 			link := printTerm(trpl.Object)
 			fmt.Print("\n")
 			if link != "" && depth < max {
-				db.PrintEntry(link, spaces+" ", max, depth+1)
+				db.PrintEntry(link, spaces+" ", lang, max, depth+1)
 			}
 		}
 	}
@@ -296,13 +311,18 @@ type Part struct {
 
 // LookupWord looks a word up in the dictionary
 func (db *DB) LookupWord(a string) (word *Word, err error) {
+	return db.LookupWordForLanguage(a, "eng")
+}
+
+// LookupWordForLanguage looks a word up in the dictionary for language
+func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 	word = &Word{
 		Word:      a,
 		Relations: make(map[string][]string),
 		Parts:     make([]*Part, 0),
 	}
 	getDefinition := func(a string) (definition string, err error) {
-		definitionEntry, err := db.GetEntry(a)
+		definitionEntry, err := db.GetEntryForLanguage(a, lang)
 		if err != nil || definitionEntry == nil {
 			return
 		}
@@ -315,22 +335,22 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		return
 	}
 	getPart := func(a string) (err error) {
-		entry, err := db.GetEntry(a)
+		entry, err := db.GetEntryForLanguage(a, lang)
 		if err != nil || entry == nil {
 			return
 		}
 		partOfSpeech := -1
 		type Sense struct {
 			definition string
-			sense      float64
+			sense      string
 		}
 		var parts []Sense
 		getSense := func(a string) (err error) {
-			senseEntry, err := db.GetEntry(a)
+			senseEntry, err := db.GetEntryForLanguage(a, lang)
 			if err != nil || senseEntry == nil {
 				return
 			}
-			definition, sense := "", 0.0
+			definition, sense := "", ""
 			for _, triple := range senseEntry.Triples {
 				if triple.Predicate.Match(ID_skos, ID_skos_definition) {
 					definition, err = getDefinition(triple.Object.Key)
@@ -338,10 +358,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 						return
 					}
 				} else if triple.Predicate.Match(ID_dbnary, ID_dbnary_senseNumber) {
-					sense, err = strconv.ParseFloat(triple.Object.Literal, 64)
-					if err != nil {
-						return
-					}
+					sense = triple.Object.Literal
 				}
 			}
 			parts = append(parts, Sense{definition, sense})
@@ -358,6 +375,18 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 				}
 			}
 		}
+		max := 0
+		for _, part := range parts {
+			if length := len(part.sense); length > max {
+				max = length
+			}
+		}
+		for i := range parts {
+			padding := max - len(parts[i].sense)
+			for j := 0; j < padding; j++ {
+				parts[i].sense = " " + parts[i].sense
+			}
+		}
 		sort.Slice(parts, func(i, j int) bool {
 			return parts[i].sense < parts[j].sense
 		})
@@ -368,13 +397,13 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		for _, p := range parts {
 			part.Definitions = append(part.Definitions, p.definition)
 		}
-		translations, err := db.GetTranslation(a)
+		translations, err := db.GetTranslationForLanguage(a, lang)
 		if err != nil {
 			return
 		}
 		if translations != nil {
 			for _, translation := range translations.Keys {
-				translationEntry, err := db.GetEntry(translation)
+				translationEntry, err := db.GetEntryForLanguage(translation, lang)
 				if err != nil {
 					return err
 				}
@@ -401,7 +430,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 		return
 	}
 
-	entry, err := db.GetEntry(a)
+	entry, err := db.GetEntryForLanguage(a, lang)
 	if err != nil || entry == nil {
 		return
 	}
@@ -427,8 +456,13 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 
 // GetTranslation returns the translation for the given key
 func (db *DB) GetTranslation(key string) (translation *Translation, err error) {
+	return db.GetTranslationForLanguage(key, "eng")
+}
+
+// GetTranslationForLanguage returns the translation for the given key and language
+func (db *DB) GetTranslationForLanguage(key, language string) (translation *Translation, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("eng_translation"))
+		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_translation", language)))
 		value := bucket.Get([]byte(key))
 		if len(value) > 0 {
 			if Press {
