@@ -17,6 +17,7 @@ var (
 	depth  = flag.Int("depth", 0, "the depth to print entries")
 	lookup = flag.String("lookup", "", "lookup a word")
 	lang   = flag.String("lang", "eng", "language to use")
+	mine   = flag.Bool("mine", false, "mine the database")
 )
 
 func main() {
@@ -40,5 +41,10 @@ func main() {
 			panic(err)
 		}
 		fmt.Println(string(data))
+		return
+	}
+
+	if *mine {
+		db.Mine()
 	}
 }

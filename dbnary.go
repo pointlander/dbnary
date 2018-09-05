@@ -12,8 +12,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sort"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
@@ -241,6 +242,79 @@ func (db *DB) GetEntryForLanguage(key, language string) (entry *Entry, err error
 	return
 }
 
+// Mine is for mining the database
+func (db *DB) Mine() {
+	regexes := []*regexp.Regexp{
+		regexp.MustCompile(`^\pN+$`),
+		regexp.MustCompile(`^((\pN+([.,]\pN+)*)|([.,]\pN+)+)[.,]?$`),
+		regexp.MustCompile(`^((\pN+\pL*)|(\pL+))$`),
+		regexp.MustCompile(`^(((\pN+|\pL+)([.,]?(\pN+|\pL+))*)|([.,](\pN+|\pL+))+)[.,]?$`),
+	}
+	type Miss struct {
+		failed  bool
+		example string
+		key     string
+	}
+	/*if regexC.Match([]byte("1.1")) {
+		fmt.Println("matches")
+	}*/
+	for _, file := range TTLFiles {
+		fmt.Println(file.Key)
+		misses := make([]Miss, len(regexes))
+		err := db.View(func(tx *bolt.Tx) error {
+			bucket := tx.Bucket([]byte(file.Key))
+			bucket.ForEach(func(key []byte, value []byte) error {
+				if len(value) > 0 {
+					if Press {
+						compressed := &Compressed{}
+						err1 := proto.Unmarshal(value, compressed)
+						if err1 != nil {
+							return err1
+						}
+						value = make([]byte, compressed.Size)
+						Decompress(bytes.NewReader(compressed.Data), value)
+					} else {
+						cp := make([]byte, len(value))
+						copy(cp, value)
+						value = cp
+					}
+					entry := &Entry{}
+					err1 := proto.Unmarshal(value, entry)
+					if err1 != nil {
+						return err1
+					}
+					sense, isSense := "", false
+					for _, triple := range entry.Triples {
+						if triple.Predicate.Match(ID_dbnary, ID_dbnary_senseNumber) {
+							sense = strings.TrimSpace(triple.Object.Literal)
+						} else if triple.Predicate.Match(ID_rdf, ID_rdf_type) &&
+							triple.Object.Match(ID_ontolex, ID_ontolex_LexicalSense) {
+							isSense = true
+						}
+					}
+					if isSense && sense != "" {
+						for i, regex := range regexes {
+							if !misses[i].failed && !regex.MatchString(sense) {
+								misses[i].failed = true
+								misses[i].example = sense
+								misses[i].key = string(key)
+							}
+						}
+					}
+				}
+				return nil
+			})
+			return nil
+		})
+		if err != nil {
+			panic(err)
+		}
+		for i, miss := range misses {
+			fmt.Println(i, !miss.failed, miss.example, miss.key)
+		}
+	}
+}
+
 // PrintEntry prints the entry
 func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 	fmt.Println(key)
@@ -340,11 +414,7 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 			return
 		}
 		partOfSpeech := -1
-		type Sense struct {
-			definition string
-			sense      string
-		}
-		var parts []Sense
+		parts := make(Definitions, 0, 8)
 		getSense := func(a string) (err error) {
 			senseEntry, err := db.GetEntryForLanguage(a, lang)
 			if err != nil || senseEntry == nil {
@@ -361,7 +431,7 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 					sense = triple.Object.Literal
 				}
 			}
-			parts = append(parts, Sense{definition, sense})
+			parts.Add(definition, sense)
 			return
 		}
 		for _, triple := range entry.Triples {
@@ -375,27 +445,13 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 				}
 			}
 		}
-		max := 0
-		for _, part := range parts {
-			if length := len(part.sense); length > max {
-				max = length
-			}
-		}
-		for i := range parts {
-			padding := max - len(parts[i].sense)
-			for j := 0; j < padding; j++ {
-				parts[i].sense = " " + parts[i].sense
-			}
-		}
-		sort.Slice(parts, func(i, j int) bool {
-			return parts[i].sense < parts[j].sense
-		})
+		parts.Sort()
 		part := &Part{
 			Part:         PrefixesByName["lexinfo"].Suffixes[partOfSpeech],
 			Translations: make(map[string][]string),
 		}
 		for _, p := range parts {
-			part.Definitions = append(part.Definitions, p.definition)
+			part.Definitions = append(part.Definitions, p.Definition)
 		}
 		translations, err := db.GetTranslationForLanguage(a, lang)
 		if err != nil {
