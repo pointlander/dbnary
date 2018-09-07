@@ -157,7 +157,7 @@ func build(db *dbnary.DB, file dbnary.TTLFile) {
 		}
 
 		var err1 error
-		entry, err1 = db.GetEntry(key)
+		entry, err1 = db.GetEntryForLanguage(key, file.Key)
 		if err1 != nil {
 			panic(err)
 		}
