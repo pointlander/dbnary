@@ -209,11 +209,13 @@ func (db *DB) Close() {
 
 // GetEntry looks up an entry
 func (db *DB) GetEntry(key string) (entry *Entry, err error) {
-	return db.GetEntryForLanguage(key, "eng")
+	entry = &Entry{}
+	_, err = db.GetEntryForLanguage(key, "eng", entry)
+	return
 }
 
 // GetEntryForLanguage looks up an entry for a given language
-func (db *DB) GetEntryForLanguage(key, language string) (entry *Entry, err error) {
+func (db *DB) GetEntryForLanguage(key, language string, entry *Entry) (valid bool, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(language))
 		value := bucket.Get([]byte(key))
@@ -231,11 +233,11 @@ func (db *DB) GetEntryForLanguage(key, language string) (entry *Entry, err error
 				copy(cp, value)
 				value = cp
 			}
-			entry = &Entry{}
 			err1 := proto.Unmarshal(value, entry)
 			if err1 != nil {
 				return err1
 			}
+			valid = true
 		}
 		return nil
 	})
@@ -318,7 +320,8 @@ func (db *DB) Mine() {
 // PrintEntry prints the entry
 func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 	fmt.Println(key)
-	entry, err := db.GetEntryForLanguage(key, lang)
+	var entry Entry
+	valid, err := db.GetEntryForLanguage(key, lang, &entry)
 	if err != nil {
 		panic(err)
 	}
@@ -349,7 +352,7 @@ func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 
 		return link
 	}
-	if entry != nil {
+	if valid {
 		for _, trpl := range entry.Triples {
 			fmt.Print(spaces)
 			printTerm(trpl.Predicate)
@@ -396,8 +399,9 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 		Parts:     make([]*Part, 0),
 	}
 	getDefinition := func(a string) (definition string, err error) {
-		definitionEntry, err := db.GetEntryForLanguage(a, lang)
-		if err != nil || definitionEntry == nil {
+		var definitionEntry Entry
+		valid, err := db.GetEntryForLanguage(a, lang, &definitionEntry)
+		if err != nil || !valid {
 			return
 		}
 		for _, triple := range definitionEntry.Triples {
@@ -409,15 +413,17 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 		return
 	}
 	getPart := func(a string) (err error) {
-		entry, err := db.GetEntryForLanguage(a, lang)
-		if err != nil || entry == nil {
+		var entry Entry
+		valid, err := db.GetEntryForLanguage(a, lang, &entry)
+		if err != nil || !valid {
 			return
 		}
 		partOfSpeech := -1
 		parts := make(Definitions, 0, 8)
 		getSense := func(a string) (err error) {
-			senseEntry, err := db.GetEntryForLanguage(a, lang)
-			if err != nil || senseEntry == nil {
+			var senseEntry Entry
+			valid, err := db.GetEntryForLanguage(a, lang, &senseEntry)
+			if err != nil || !valid {
 				return
 			}
 			definition, sense := "", ""
@@ -459,11 +465,12 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 		}
 		if translations != nil {
 			for _, translation := range translations.Keys {
-				translationEntry, err := db.GetEntryForLanguage(translation, lang)
+				var translationEntry Entry
+				valid, err := db.GetEntryForLanguage(translation, lang, &translationEntry)
 				if err != nil {
 					return err
 				}
-				if translationEntry == nil {
+				if !valid {
 					continue
 				}
 				language, form := "", ""
@@ -486,8 +493,9 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 		return
 	}
 
-	entry, err := db.GetEntryForLanguage(a, lang)
-	if err != nil || entry == nil {
+	var entry Entry
+	valid, err := db.GetEntryForLanguage(a, lang, &entry)
+	if err != nil || !valid {
 		return
 	}
 	for _, triple := range entry.Triples {
