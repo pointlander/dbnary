@@ -57,20 +57,6 @@ func getTerm(term rdf.Term) *dbnary.Term {
 	return nil
 }
 
-func getKey(key string) (string, bool) {
-	index := strings.LastIndexAny(key, "/#")
-	if index == -1 {
-		return key, true
-	}
-
-	prefix := key[:index+1]
-	if dbnary.PrefixesByURI[prefix].Key {
-		return strings.TrimPrefix(key, prefix), true
-	}
-
-	return "", false
-}
-
 func writeNodes(db *dbnary.DB, primary []byte, nodes *dbnary.Node) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(primary)
@@ -122,7 +108,7 @@ func build(db *dbnary.DB, file dbnary.TTLFile) {
 	triple, err := dec.Decode()
 	for err != io.EOF {
 		subj := triple.Subj.String()
-		key, valid := getKey(subj)
+		key, valid := dbnary.GetKey(subj)
 		if valid && key != "" {
 			node, found := lru.Get(key)
 			if !found {

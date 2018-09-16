@@ -18,6 +18,7 @@ var (
 	lookup = flag.String("lookup", "", "lookup a word")
 	lang   = flag.String("lang", "eng", "language to use")
 	mine   = flag.Bool("mine", false, "mine the database")
+	check  = flag.Bool("check", false, "check the database")
 )
 
 func main() {
@@ -46,5 +47,11 @@ func main() {
 
 	if *mine {
 		db.Mine()
+		return
+	}
+
+	if *check {
+		db.Check()
+		return
 	}
 }

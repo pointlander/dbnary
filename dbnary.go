@@ -8,6 +8,7 @@ package dbnary
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
+	"github.com/knakk/rdf"
 	"github.com/pointlander/compress"
 )
 
@@ -95,6 +97,21 @@ func init() {
 		PrefixesByURI[prefix.URI] = prefix
 		PrefixesByName[prefix.Name] = prefix
 	}
+}
+
+// GetKey gets the db key
+func GetKey(key string) (string, bool) {
+	index := strings.LastIndexAny(key, "/#")
+	if index == -1 {
+		return key, true
+	}
+
+	prefix := key[:index+1]
+	if PrefixesByURI[prefix].Key {
+		return strings.TrimPrefix(key, prefix), true
+	}
+
+	return "", false
 }
 
 // Download downloads the dbnary files
@@ -313,6 +330,41 @@ func (db *DB) Mine() {
 		}
 		for i, miss := range misses {
 			fmt.Println(i, !miss.failed, miss.example, miss.key)
+		}
+	}
+}
+
+// Check is for checking the database
+func (db *DB) Check() {
+	for _, file := range TTLFiles {
+		fmt.Println("checking:", file.Key)
+		err := db.View(func(tx *bolt.Tx) error {
+			bucket := tx.Bucket([]byte(file.Key))
+
+			input, err := os.Open(file.Name)
+			if err != nil {
+				panic(err)
+			}
+			defer input.Close()
+			ttl := bzip2.NewReader(input)
+			dec := rdf.NewTripleDecoder(ttl, rdf.Turtle)
+
+			triple, err := dec.Decode()
+			for err != io.EOF {
+				subj := triple.Subj.String()
+				key, valid := GetKey(subj)
+				if valid && key != "" {
+					if bucket.Get([]byte(key)) == nil {
+						fmt.Println("key not found:", key)
+					}
+				}
+				triple, err = dec.Decode()
+			}
+
+			return nil
+		})
+		if err != nil {
+			panic(err)
 		}
 	}
 }
