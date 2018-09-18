@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/boltdb/bolt"
@@ -107,6 +108,7 @@ func build(db *dbnary.DB, file dbnary.TTLFile) {
 		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_translation", lang)))
 		translation := dbnary.Translation{}
 		for k, v := range translations {
+			sort.Strings(v)
 			translation.Keys = v
 			value, err1 := proto.Marshal(&translation)
 			if err1 != nil {
