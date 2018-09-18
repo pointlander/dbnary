@@ -100,7 +100,8 @@ func init() {
 }
 
 // GetKey gets the db key
-func GetKey(key string) (string, bool) {
+func GetKey(triple rdf.Triple) (string, bool) {
+	key := triple.Subj.String()
 	index := strings.LastIndexAny(key, "/#")
 	if index == -1 {
 		return key, true
@@ -351,8 +352,7 @@ func (db *DB) Check() {
 
 			triple, err := dec.Decode()
 			for err != io.EOF {
-				subj := triple.Subj.String()
-				key, valid := GetKey(subj)
+				key, valid := GetKey(triple)
 				if valid && key != "" {
 					if bucket.Get([]byte(key)) == nil {
 						fmt.Println("key not found:", key)
@@ -422,6 +422,40 @@ func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 			fmt.Println(key)
 		}
 	}
+}
+
+// WriteNodes writes the nodes into lang
+func (db *DB) WriteNodes(lang string, nodes *Node) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(lang))
+		for nodes != nil {
+			value, err := proto.Marshal(&nodes.Entry)
+			if err != nil {
+				return err
+			}
+			if Press {
+				output := &bytes.Buffer{}
+				Compress(value, output)
+				compressed := &Compressed{
+					Size: uint64(len(value)),
+					Data: output.Bytes(),
+				}
+				value, err = proto.Marshal(compressed)
+				if err != nil {
+					return err
+				}
+			}
+
+			err = bucket.Put([]byte(nodes.Key), value)
+			if err != nil {
+				return err
+			}
+
+			nodes = nodes.B
+		}
+
+		return nil
+	})
 }
 
 // Word a word

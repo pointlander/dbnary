@@ -57,45 +57,9 @@ func getTerm(term rdf.Term) *dbnary.Term {
 	return nil
 }
 
-func writeNodes(db *dbnary.DB, primary []byte, nodes *dbnary.Node) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(primary)
-		for nodes != nil {
-			value, err := proto.Marshal(&nodes.Entry)
-			if err != nil {
-				return err
-			}
-			if dbnary.Press {
-				output := &bytes.Buffer{}
-				dbnary.Compress(value, output)
-				compressed := &dbnary.Compressed{
-					Size: uint64(len(value)),
-					Data: output.Bytes(),
-				}
-				value, err = proto.Marshal(compressed)
-				if err != nil {
-					return err
-				}
-			}
-
-			err = bucket.Put([]byte(nodes.Key), value)
-			if err != nil {
-				return err
-			}
-
-			nodes = nodes.B
-		}
-
-		return nil
-	})
-}
-
 func build(db *dbnary.DB, file dbnary.TTLFile) {
-	fmt.Println(file.Name, file.Key)
-	var (
-		primary     = []byte(file.Key)
-		translation = []byte(fmt.Sprintf("%s_translation", file.Key))
-	)
+	lang := file.Key
+	fmt.Println(file.Name, lang)
 	input, err := os.Open(file.Name)
 	if err != nil {
 		panic(err)
@@ -107,12 +71,11 @@ func build(db *dbnary.DB, file dbnary.TTLFile) {
 	translations, lru := make(map[string][]string), dbnary.NewLRU(11)
 	triple, err := dec.Decode()
 	for err != io.EOF {
-		subj := triple.Subj.String()
-		key, valid := dbnary.GetKey(subj)
+		key, valid := dbnary.GetKey(triple)
 		if valid && key != "" {
 			node, found := lru.Get(key)
 			if !found {
-				_, err1 := db.GetEntryForLanguage(key, file.Key, &node.Entry)
+				_, err1 := db.GetEntryForLanguage(key, lang, &node.Entry)
 				if err1 != nil {
 					panic(err)
 				}
@@ -131,17 +94,17 @@ func build(db *dbnary.DB, file dbnary.TTLFile) {
 
 			nodes := lru.Flush()
 			if nodes != nil {
-				writeNodes(db, primary, nodes)
+				db.WriteNodes(lang, nodes)
 			}
 		}
 		triple, err = dec.Decode()
 	}
 	if lru.Head != nil {
-		writeNodes(db, primary, lru.Head)
+		db.WriteNodes(lang, lru.Head)
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(translation)
+		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_translation", lang)))
 		translation := dbnary.Translation{}
 		for k, v := range translations {
 			translation.Keys = v
