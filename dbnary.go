@@ -580,7 +580,8 @@ func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 	}
 
 	var entry Entry
-	valid, err := db.GetEntryForLanguage(a, lang, &entry)
+	key := strings.Replace(a, " ", "_", -1)
+	valid, err := db.GetEntryForLanguage(key, lang, &entry)
 	if err != nil || !valid {
 		return
 	}
