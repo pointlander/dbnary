@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/knakk/rdf"
+	"github.com/pointlander/dbnary"
 )
 
 // Suffix is a suffix
@@ -101,33 +102,159 @@ var Prefixes = []Prefix{
 		URI:  "http://www.w3.org/2001/XMLSchema#",
 	},
 	{
+		Name: "bul",
+		URI:  "http://kaiko.getalp.org/dbnary/bul/",
+		Key:  true,
+	},
+	{
+		Name: "deu",
+		URI:  "http://kaiko.getalp.org/dbnary/deu/",
+		Key:  true,
+	},
+	{
+		Name: "ell",
+		URI:  "http://kaiko.getalp.org/dbnary/ell/",
+		Key:  true,
+	},
+	{
 		Name: "eng",
 		URI:  "http://kaiko.getalp.org/dbnary/eng/",
 		Key:  true,
 	},
+	{
+		Name: "spa",
+		URI:  "http://kaiko.getalp.org/dbnary/spa/",
+		Key:  true,
+	},
+	{
+		Name: "fin",
+		URI:  "http://kaiko.getalp.org/dbnary/fin/",
+		Key:  true,
+	},
+	{
+		Name: "fra",
+		URI:  "http://kaiko.getalp.org/dbnary/fra/",
+		Key:  true,
+	},
+	{
+		Name: "ind",
+		URI:  "http://kaiko.getalp.org/dbnary/ind/",
+		Key:  true,
+	},
+	{
+		Name: "ita",
+		URI:  "http://kaiko.getalp.org/dbnary/ita/",
+		Key:  true,
+	},
+	{
+		Name: "jpn",
+		URI:  "http://kaiko.getalp.org/dbnary/jpn/",
+		Key:  true,
+	},
+	{
+		Name: "lat",
+		URI:  "http://kaiko.getalp.org/dbnary/lat/",
+		Key:  true,
+	},
+	{
+		Name: "lit",
+		URI:  "http://kaiko.getalp.org/dbnary/lit/",
+		Key:  true,
+	},
+	{
+		Name: "mlg",
+		URI:  "http://kaiko.getalp.org/dbnary/mlg/",
+		Key:  true,
+	},
+	{
+		Name: "nld",
+		URI:  "http://kaiko.getalp.org/dbnary/nld/",
+		Key:  true,
+	},
+	{
+		Name: "nor",
+		URI:  "http://kaiko.getalp.org/dbnary/nor/",
+		Key:  true,
+	},
+	{
+		Name: "pol",
+		URI:  "http://kaiko.getalp.org/dbnary/pol/",
+		Key:  true,
+	},
+	{
+		Name: "por",
+		URI:  "http://kaiko.getalp.org/dbnary/por/",
+		Key:  true,
+	},
+	{
+		Name: "rus",
+		URI:  "http://kaiko.getalp.org/dbnary/rus/",
+		Key:  true,
+	},
+	{
+		Name: "hbs",
+		URI:  "http://kaiko.getalp.org/dbnary/hbs/",
+		Key:  true,
+	},
+	{
+		Name: "swe",
+		URI:  "http://kaiko.getalp.org/dbnary/swe/",
+		Key:  true,
+	},
+	{
+		Name: "tur",
+		URI:  "http://kaiko.getalp.org/dbnary/tur/",
+		Key:  true,
+	},
+}
+
+var (
+	// KeysByName are the prefixes that are primary keys by name
+	KeysByName = make(map[string]Prefix)
+	// KeysByURI are the prefixes that are primary keys by uri
+	KeysByURI = make(map[string]Prefix)
+	// PrefixesByName are the prefixes by name
+	PrefixesByName = make(map[string]*Prefix)
+)
+
+func init() {
+	for _, prefix := range Prefixes {
+		if prefix.Key {
+			if _, ok := KeysByName[prefix.Name]; ok {
+				panic("duplicate keys")
+			} else {
+				KeysByName[prefix.Name] = prefix
+			}
+
+			if _, ok := KeysByURI[prefix.URI]; ok {
+				panic("duplicate keys")
+			} else {
+				KeysByURI[prefix.URI] = prefix
+			}
+		}
+	}
+
+	for i := range Prefixes {
+		prefix := &Prefixes[i]
+		prefix.Suffixes = make(map[string]*Suffix)
+		PrefixesByName[prefix.URI] = prefix
+	}
 }
 
 const (
 	file = "schema.go"
-	eng  = "http://kaiko.getalp.org/dbnary/eng/"
 	// Page is a wiktionary page
 	Page = "http://kaiko.getalp.org/dbnary#Page"
 )
 
-func generateSchema(out *bytes.Buffer) {
-	prefixes := make(map[string]*Prefix)
-	for i := range Prefixes {
-		prefix := &Prefixes[i]
-		prefix.Suffixes = make(map[string]*Suffix)
-		prefixes[prefix.URI] = prefix
-	}
+func generateSchema(file string) {
 	add := func(term rdf.Term) {
 		if term.Type() != rdf.TermIRI {
 			return
 		}
 		iri := term.String()
 		prefixIndex := strings.LastIndexAny(iri, "/#") + 1
-		prefix := prefixes[iri[:prefixIndex]]
+		prefix := PrefixesByName[iri[:prefixIndex]]
 		if prefix == nil {
 			panic(fmt.Errorf("%v", term))
 		}
@@ -146,6 +273,46 @@ func generateSchema(out *bytes.Buffer) {
 			Count: 1,
 		}
 	}
+
+	input, err := os.Open(file)
+	if err != nil {
+		panic(err)
+	}
+	defer input.Close()
+	ttl := bzip2.NewReader(input)
+	dec := rdf.NewTripleDecoder(ttl, rdf.Turtle)
+	pages, definitions := 0, 0
+	triple, err := dec.Decode()
+	keys := make(map[string]bool)
+	for err != io.EOF {
+		add(triple.Subj)
+		add(triple.Pred)
+		add(triple.Obj)
+
+		if strings.HasPrefix(triple.Subj.String(), "http://") {
+			s := triple.Subj.String()
+			index := strings.LastIndexAny(s, "/#") + 1
+			if _, ok := KeysByURI[s[:index]]; !ok {
+				if !keys[s] {
+					fmt.Println(triple)
+					keys[s] = true
+				}
+			}
+		} else {
+			definitions++
+		}
+		if triple.Obj.String() == Page {
+			pages++
+		}
+		triple, err = dec.Decode()
+	}
+	fmt.Println(file)
+	fmt.Println("pages=", pages)
+	fmt.Println("definitions=", definitions)
+	fmt.Println("keys=", keys)
+}
+
+func printSchema(out *bytes.Buffer) {
 	printPrefixes := func(w io.Writer) {
 		fmt.Fprintf(w, "// Copyright 2018 The dbnary Authors. All rights reserved.\n")
 		fmt.Fprintf(w, "// Use of this source code is governed by a BSD-style\n")
@@ -195,35 +362,6 @@ func generateSchema(out *bytes.Buffer) {
 	Prefixes[0].Suffixes["test3"] = 3
 	printPrefixes(os.Stdout)*/
 
-	input, err := os.Open("en_dbnary_ontolex.ttl.bz2")
-	if err != nil {
-		panic(err)
-	}
-	defer input.Close()
-	ttl := bzip2.NewReader(input)
-	dec := rdf.NewTripleDecoder(ttl, rdf.Turtle)
-	pages, definitions := 0, 0
-	triple, err := dec.Decode()
-	for err != io.EOF {
-		add(triple.Subj)
-		add(triple.Pred)
-		add(triple.Obj)
-
-		if strings.HasPrefix(triple.Subj.String(), "http://") {
-			if !strings.HasPrefix(triple.Subj.String(), eng) {
-				fmt.Println(triple)
-			}
-		} else {
-			definitions++
-		}
-		if triple.Obj.String() == Page {
-			pages++
-		}
-		triple, err = dec.Decode()
-	}
-	fmt.Println("pages=", pages)
-	fmt.Println("definitions=", definitions)
-
 	sort.Slice(Prefixes, func(i, j int) bool {
 		return Prefixes[i].Count > Prefixes[j].Count
 	})
@@ -231,8 +369,11 @@ func generateSchema(out *bytes.Buffer) {
 }
 
 func main() {
+	for _, ttl := range dbnary.TTLFiles {
+		generateSchema(ttl.Name)
+	}
 	var buffer bytes.Buffer
-	generateSchema(&buffer)
+	printSchema(&buffer)
 
 	out, err := os.Create(file)
 	if err != nil {
