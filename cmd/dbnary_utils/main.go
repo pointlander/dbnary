@@ -7,17 +7,20 @@ package main
 import (
 	"bytes"
 	"compress/bzip2"
+	"flag"
 	"fmt"
 	"go/parser"
 	"go/printer"
 	"go/token"
 	"io"
+	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/knakk/rdf"
-	"github.com/pointlander/dbnary"
+	"github.com/pointlander/dbnary/utils"
 )
 
 // Suffix is a suffix
@@ -245,7 +248,56 @@ const (
 	file = "schema.go"
 	// Page is a wiktionary page
 	Page = "http://kaiko.getalp.org/dbnary#Page"
+	// TTLURL is the domain of dbnary
+	TTLURL = "http://kaiko.getalp.org/static/ontolex/latest/"
 )
+
+// Download downloads the dbnary files
+func Download() {
+	for _, file := range utils.TTLFiles {
+		head, err := http.Head(TTLURL + file.Name)
+		if err != nil {
+			panic(err)
+		}
+		size, err := strconv.Atoi(head.Header.Get("Content-Length"))
+		if err != nil {
+			panic(err)
+		}
+		last, err := http.ParseTime(head.Header.Get("Last-Modified"))
+		if err != nil {
+			panic(err)
+		}
+		head.Body.Close()
+		stat, err := os.Stat("./" + file.Name)
+		if err != nil || stat.ModTime().Before(last) || stat.Size() != int64(size) {
+			fmt.Println("downloading", file, size, last)
+			response, err := http.Get(TTLURL + file.Name)
+			if err != nil {
+				panic(err)
+			}
+
+			out, err := os.Create("./" + file.Name)
+			if err != nil {
+				panic(err)
+			}
+
+			_, err = io.Copy(out, response.Body)
+			if err != nil {
+				panic(err)
+			}
+			response.Body.Close()
+			out.Close()
+
+			err = os.Chtimes("./"+file.Name, last, last)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			fmt.Println("skipping", file, size, last)
+		}
+	}
+	return
+}
 
 func generateSchema(file string) {
 	add := func(term rdf.Term) {
@@ -368,29 +420,45 @@ func printSchema(out *bytes.Buffer) {
 	printPrefixes(out)
 }
 
+var (
+	download = flag.Bool("download", false, "download the ttl files")
+	schema   = flag.Bool("schema", false, "build the schema")
+)
+
 func main() {
-	for _, ttl := range dbnary.TTLFiles {
-		generateSchema(ttl.Name)
-	}
-	var buffer bytes.Buffer
-	printSchema(&buffer)
+	flag.Parse()
 
-	out, err := os.Create(file)
-	if err != nil {
-		panic(err)
+	if *download {
+		Download()
+		return
 	}
-	defer out.Close()
 
-	fileSet := token.NewFileSet()
-	code, err := parser.ParseFile(fileSet, file, &buffer, parser.ParseComments)
-	if err != nil {
-		buffer.WriteTo(out)
-		panic(fmt.Errorf("%v: %v", file, err))
-	}
-	formatter := printer.Config{Mode: printer.TabIndent | printer.UseSpaces, Tabwidth: 8}
-	err = formatter.Fprint(out, fileSet, code)
-	if err != nil {
-		buffer.WriteTo(out)
-		panic(fmt.Errorf("%v: %v", file, err))
+	if *schema {
+		for _, ttl := range utils.TTLFiles {
+			generateSchema(ttl.Name)
+		}
+		var buffer bytes.Buffer
+		printSchema(&buffer)
+
+		out, err := os.Create(file)
+		if err != nil {
+			panic(err)
+		}
+		defer out.Close()
+
+		fileSet := token.NewFileSet()
+		code, err := parser.ParseFile(fileSet, file, &buffer, parser.ParseComments)
+		if err != nil {
+			buffer.WriteTo(out)
+			panic(fmt.Errorf("%v: %v", file, err))
+		}
+		formatter := printer.Config{Mode: printer.TabIndent | printer.UseSpaces, Tabwidth: 8}
+		err = formatter.Fprint(out, fileSet, code)
+		if err != nil {
+			buffer.WriteTo(out)
+			panic(fmt.Errorf("%v: %v", file, err))
+		}
+
+		return
 	}
 }

@@ -11,23 +11,20 @@ import (
 	"compress/bzip2"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/knakk/rdf"
 	"github.com/pointlander/compress"
+	"github.com/pointlander/dbnary/utils"
 )
 
 const (
 	// Press determines if the database is compressed
 	Press = true
-	// TTLURL is the domain of dbnary
-	TTLURL = "http://kaiko.getalp.org/static/ontolex/latest/"
 )
 
 // Prefix is a rdf prefix
@@ -39,36 +36,7 @@ type Prefix struct {
 	SuffixesByName map[string]int
 }
 
-// TTLFile is a ttl file
-type TTLFile struct {
-	Name, Key, Full string
-}
-
 var (
-	// TTLFiles are the dbnary files
-	TTLFiles = []TTLFile{
-		{"bg_dbnary_ontolex.ttl.bz2", "bul", "bulgarian"},
-		{"de_dbnary_ontolex.ttl.bz2", "deu", "german"},
-		{"el_dbnary_ontolex.ttl.bz2", "ell", "greek"},
-		{"en_dbnary_ontolex.ttl.bz2", "eng", "english"},
-		{"es_dbnary_ontolex.ttl.bz2", "spa", "spanish"},
-		{"fi_dbnary_ontolex.ttl.bz2", "fin", "finnish"},
-		{"fr_dbnary_ontolex.ttl.bz2", "fra", "french"},
-		{"id_dbnary_ontolex.ttl.bz2", "ind", "indonesian"},
-		{"it_dbnary_ontolex.ttl.bz2", "ita", "italian"},
-		{"ja_dbnary_ontolex.ttl.bz2", "jpn", "japanese"},
-		{"la_dbnary_ontolex.ttl.bz2", "lat", "latin"},
-		{"lt_dbnary_ontolex.ttl.bz2", "lit", "lithuanian"},
-		{"mg_dbnary_ontolex.ttl.bz2", "mlg", "malagasy"},
-		{"nl_dbnary_ontolex.ttl.bz2", "nld", "dutch"},
-		{"no_dbnary_ontolex.ttl.bz2", "nor", "norwegian"},
-		{"pl_dbnary_ontolex.ttl.bz2", "pol", "polish"},
-		{"pt_dbnary_ontolex.ttl.bz2", "por", "portuguese"},
-		{"ru_dbnary_ontolex.ttl.bz2", "rus", "russian"},
-		{"sh_dbnary_ontolex.ttl.bz2", "hbs", "serbo-croatian"},
-		{"sv_dbnary_ontolex.ttl.bz2", "swe", "swedish"},
-		{"tr_dbnary_ontolex.ttl.bz2", "tur", "turkish"},
-	}
 	// PrefixesByURI are the prefixes indexed by URI
 	PrefixesByURI = make(map[string]*Prefix)
 	// PrefixesByName are the prefixes indexed by name
@@ -115,53 +83,6 @@ func GetKey(triple rdf.Triple) (string, bool) {
 	return "", false
 }
 
-// Download downloads the dbnary files
-func Download() {
-	for _, file := range TTLFiles {
-		head, err := http.Head(TTLURL + file.Name)
-		if err != nil {
-			panic(err)
-		}
-		size, err := strconv.Atoi(head.Header.Get("Content-Length"))
-		if err != nil {
-			panic(err)
-		}
-		last, err := http.ParseTime(head.Header.Get("Last-Modified"))
-		if err != nil {
-			panic(err)
-		}
-		head.Body.Close()
-		stat, err := os.Stat("./" + file.Name)
-		if err != nil || stat.ModTime().Before(last) || stat.Size() != int64(size) {
-			fmt.Println("downloading", file, size, last)
-			response, err := http.Get(TTLURL + file.Name)
-			if err != nil {
-				panic(err)
-			}
-
-			out, err := os.Create("./" + file.Name)
-			if err != nil {
-				panic(err)
-			}
-
-			_, err = io.Copy(out, response.Body)
-			if err != nil {
-				panic(err)
-			}
-			response.Body.Close()
-			out.Close()
-
-			err = os.Chtimes("./"+file.Name, last, last)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			fmt.Println("skipping", file, size, last)
-		}
-	}
-	return
-}
-
 // Compress compresses some data
 func Compress(input []byte, output io.Writer) {
 	data, channel := make([]byte, len(input)), make(chan []byte, 1)
@@ -198,7 +119,7 @@ func OpenDB(file string, readOnly bool) *DB {
 
 	if !readOnly {
 		err = db.Update(func(tx *bolt.Tx) error {
-			for _, file := range TTLFiles {
+			for _, file := range utils.TTLFiles {
 				_, err1 := tx.CreateBucketIfNotExists([]byte(file.Key))
 				if err1 != nil {
 					return err1
@@ -278,7 +199,7 @@ func (db *DB) Mine() {
 	/*if regexC.Match([]byte("1.1")) {
 		fmt.Println("matches")
 	}*/
-	for _, file := range TTLFiles {
+	for _, file := range utils.TTLFiles {
 		fmt.Println(file.Key)
 		misses := make([]Miss, len(regexes))
 		err := db.View(func(tx *bolt.Tx) error {
@@ -337,7 +258,7 @@ func (db *DB) Mine() {
 
 // Check is for checking the database
 func (db *DB) Check() {
-	for _, file := range TTLFiles {
+	for _, file := range utils.TTLFiles {
 		fmt.Println("checking:", file.Key)
 		err := db.View(func(tx *bolt.Tx) error {
 			bucket := tx.Bucket([]byte(file.Key))
