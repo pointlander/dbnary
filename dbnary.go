@@ -157,6 +157,9 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 func (db *DB) GetEntryForLanguage(key, language string, entry *Entry) (valid bool, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(language))
+		if bucket == nil {
+			return fmt.Errorf("invalid language: %s", language)
+		}
 		value := bucket.Get([]byte(key))
 		if len(value) > 0 {
 			if Press {
@@ -535,6 +538,9 @@ func (db *DB) GetTranslation(key string) (translation *Translation, err error) {
 func (db *DB) GetTranslationForLanguage(key, language string) (translation *Translation, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_translation", language)))
+		if bucket == nil {
+			return fmt.Errorf("no translations for %s", language)
+		}
 		value := bucket.Get([]byte(key))
 		if len(value) > 0 {
 			if Press {
