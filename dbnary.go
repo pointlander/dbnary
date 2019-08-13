@@ -384,6 +384,7 @@ func (db *DB) WriteNodes(lang string, nodes *Node) error {
 
 // Word a word
 type Word struct {
+	Language  string              `json:"language"`
 	Word      string              `json:"word"`
 	Relations map[string][]string `json:"relations"`
 	Parts     []*Part             `json:"parts"`
@@ -404,6 +405,7 @@ func (db *DB) LookupWord(a string) (word *Word, err error) {
 // LookupWordForLanguage looks a word up in the dictionary for language
 func (db *DB) LookupWordForLanguage(a, lang string) (word *Word, err error) {
 	word = &Word{
+		Language:  lang,
 		Word:      a,
 		Relations: make(map[string][]string),
 		Parts:     make([]*Part, 0),

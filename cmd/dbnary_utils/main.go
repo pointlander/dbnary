@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/bzip2"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/knakk/rdf"
 	"github.com/pointlander/dbnary/utils"
@@ -420,13 +422,178 @@ func printSchema(out *bytes.Buffer) {
 	printPrefixes(out)
 }
 
+const isoTemplate = `// Copyright 2018 The dbnary Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// http://www.iso639-3.sil.org/
+
+package utils
+
+// LanguageScope is the scope of the language
+type LanguageScope uint8
+
+const (
+	// LanguageScopeIndividual is an individual language scope
+	LanguageScopeIndividual LanguageScope = iota
+	// LanguageScopeMacrolanguage is a macro language scope
+	LanguageScopeMacrolanguage
+	// LanguageScopeSpecial is a special language scope
+	LanguageScopeSpecial
+)
+
+// LanguageType is a language type
+type LanguageType uint8
+
+const (
+	// A is an ancient language type
+	LanguageTypeAncient LanguageType = iota
+	// LanguageTypeConstructed is a constructed language
+	LanguageTypeConstructed
+	// LanguageTypeExtinct is a extinct language
+	LanguageTypeExtinct
+	// LanguageTypeHistorical is a historical language
+	LanguageTypeHistorical
+	// LanguageTypeLiving is a living language
+	LanguageTypeLiving
+	// LanguageTypeSpecial is a special language
+	LanguageTypeSpecial
+)
+
+// Language is a language
+type Language struct {
+	ID string
+	Part2B string
+	Part2T string
+	Part1 string
+	Scope LanguageScope
+	Type LanguageType
+	Name string
+	Comment string
+}
+
+// Languages are a list of languages
+var Languages = map[string]Language{
+{{- range .}}
+	"{{index . 0}}": {"{{index . 0}}", "{{index . 1}}", "{{index . 2}}", "{{index . 3}}", {{index . 4}}, {{index . 5}}, "{{index . 6}}", "{{index . 7}}"},
+{{- end}}
+}
+`
+
+// ISO generates iso-639-3 file
+func ISO() {
+	in, err := os.Open(*input)
+	if err != nil {
+		panic(err)
+	}
+	defer in.Close()
+	out, err := os.Create("iso639-3.go")
+	if err != nil {
+		panic(err)
+	}
+	defer out.Close()
+	isoTemplate, err := template.New("iso").
+		Parse(isoTemplate)
+	if err != nil {
+		panic(err)
+	}
+	languages := make(chan []string, 8)
+	go func() {
+		reader := bufio.NewReader(in)
+		_, err = reader.ReadString('\n')
+		for err == nil {
+			var line string
+			line, err = reader.ReadString('\n')
+			parts := strings.Split(line, "\t")
+			for i, part := range parts {
+				parts[i] = strings.TrimSpace(part)
+			}
+			switch parts[4] {
+			case "I":
+				parts[4] = "LanguageScopeIndividual"
+			case "M":
+				parts[4] = "LanguageScopeMacrolanguage"
+			case "S":
+				parts[4] = "LanguageScopeSpecial"
+			default:
+				panic(fmt.Errorf("invalid scope %v", parts))
+			}
+			switch parts[5] {
+			case "A":
+				parts[5] = "LanguageTypeAncient"
+			case "C":
+				parts[5] = "LanguageTypeConstructed"
+			case "E":
+				parts[5] = "LanguageTypeExtinct"
+			case "H":
+				parts[5] = "LanguageTypeHistorical"
+			case "L":
+				parts[5] = "LanguageTypeLiving"
+			case "S":
+				parts[5] = "LanguageTypeSpecial"
+			default:
+				panic(fmt.Errorf("invalid type %v", parts))
+			}
+			languages <- parts
+		}
+		close(languages)
+	}()
+	err = isoTemplate.Execute(out, languages)
+	if err != nil {
+		return
+	}
+
+	/*fmt.Fprintf(out, "// Copyright 2018 The dbnary Authors. All rights reserved.\n")
+	fmt.Fprintf(out, "// Use of this source code is governed by a BSD-style\n")
+	fmt.Fprintf(out, "// license that can be found in the LICENSE file.\n\n")
+	fmt.Fprintf(out, "// http://www.iso639-3.sil.org/\n\n")
+	fmt.Fprintf(out, "package utils\n\n")
+	fmt.Fprintf(out, "// Language is a language\n")
+	fmt.Fprintf(out, "type Language struct {\n")
+	fmt.Fprintf(out, "\tID string\n")
+	fmt.Fprintf(out, "\tPart2B string\n")
+	fmt.Fprintf(out, "\tPart2T string\n")
+	fmt.Fprintf(out, "\tPart1 string\n")
+	fmt.Fprintf(out, "\tScope string\n")
+	fmt.Fprintf(out, "\tType string\n")
+	fmt.Fprintf(out, "\tName string\n")
+	fmt.Fprintf(out, "\tComment string\n")
+	fmt.Fprintf(out, "}\n\n")
+	fmt.Fprintf(out, "var Languages = map[string]Language{\n")
+	reader, seen := bufio.NewReader(in), make(map[string]bool)
+	_, err = reader.ReadString('\n')
+	for err == nil {
+		var line string
+		line, err = reader.ReadString('\n')
+		parts := strings.Split(line, "\t")
+		if seen[parts[0]] {
+			fmt.Printf(line)
+			continue
+		}
+		for i, part := range parts {
+			parts[i] = strings.TrimSpace(part)
+		}
+		fmt.Fprintf(out, "\t\"%s\": {\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\"},\n",
+			parts[0], parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7])
+		seen[parts[0]] = true
+	}
+	fmt.Fprintf(out, "}\n")*/
+}
+
 var (
 	download = flag.Bool("download", false, "download the ttl files")
 	schema   = flag.Bool("schema", false, "build the schema")
+	iso      = flag.Bool("iso", false, "generate iso file")
+	input    = flag.String("input", "", "the name of a file")
 )
 
 func main() {
 	flag.Parse()
+
+	if *iso {
+		ISO()
+		return
+	}
 
 	if *download {
 		Download()
