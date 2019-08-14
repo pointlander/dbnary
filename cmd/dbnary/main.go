@@ -286,12 +286,8 @@ func (d *Dictionary) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		data, err := json.Marshal(entry)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		_, err = w.Write(data)
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(entry)
 		if err != nil {
 			return
 		}
