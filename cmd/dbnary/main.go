@@ -184,6 +184,7 @@ const EntryTemplate = `<html>
  <body>
 	<h1>{{clean .Word}}</h1>
 	{{$wordLanguage := .Language}}
+	(<a href="/api/{{$wordLanguage}}/{{.Word}}">json</a>)<br/>
 	<table>
 		<tr>
 {{range $relation, $words := .Relations}}
@@ -254,7 +255,8 @@ type Dictionary struct {
 // ServeHTTP server up a dictionary entry
 func (d *Dictionary) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Split(r.URL.Path, "/")
-	if len(path) == 3 {
+	switch len(path) {
+	case 3:
 		lang, word := path[1], path[2]
 		if _, ok := d.languages[lang]; !ok {
 			w.WriteHeader(http.StatusNotFound)
@@ -266,6 +268,30 @@ func (d *Dictionary) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = d.entryTemplate.Execute(w, entry)
+		if err != nil {
+			return
+		}
+	case 4:
+		if path[1] != "api" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		lang, word := path[2], path[3]
+		if _, ok := d.languages[lang]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		entry, err := d.db.LookupWordForLanguage(word, lang)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		data, err := json.Marshal(entry)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, err = w.Write(data)
 		if err != nil {
 			return
 		}
