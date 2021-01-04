@@ -355,6 +355,7 @@ var (
 	print  = flag.String("print", "", "entry to print")
 	depth  = flag.Int("depth", 0, "the depth to print entries")
 	lookup = flag.String("lookup", "", "lookup a word")
+	search = flag.String("search", "", "search for a word")
 	lang   = flag.String("lang", "eng", "language to use")
 	mine   = flag.Bool("mine", false, "mine the database")
 	check  = flag.Bool("check", false, "check the database")
@@ -397,6 +398,19 @@ func main() {
 			panic(err)
 		}
 		data, err := json.MarshalIndent(word, "", " ")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(data))
+		return
+	}
+
+	if *search != "" {
+		results, err := db.SearchWordForLanguage(*search, *lang)
+		if err != nil {
+			panic(err)
+		}
+		data, err := json.MarshalIndent(results, "", " ")
 		if err != nil {
 			panic(err)
 		}

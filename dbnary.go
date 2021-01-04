@@ -11,6 +11,7 @@ import (
 	"compress/bzip2"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/knakk/rdf"
+	"github.com/texttheater/golang-levenshtein/levenshtein"
+
 	"github.com/pointlander/compress"
 	"github.com/pointlander/dbnary/utils"
 )
@@ -184,6 +187,50 @@ func (db *DB) GetEntryForLanguage(key, language string, entry *Entry) (valid boo
 		return nil
 	})
 	return
+}
+
+// Result is a search result
+type Result struct {
+	Key      string
+	Distance int
+}
+
+// SearchWordForLanguage searches for a word in a particular languages
+func (db *DB) SearchWordForLanguage(query, language string) ([]Result, error) {
+	results := make([]Result, 10)
+	for i := range results {
+		results[i].Distance = math.MaxInt64
+	}
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(language))
+		if bucket == nil {
+			return fmt.Errorf("invalid language: %s", language)
+		}
+		cursor := bucket.Cursor()
+		key, value := cursor.First()
+		for key != nil && value != nil {
+			if len(key) > 0 {
+				distance := levenshtein.DistanceForStrings([]rune(string(key)), []rune(query), levenshtein.DefaultOptions)
+				index := 0
+				for index < len(results) && distance > results[index].Distance {
+					index++
+				}
+				if index < len(results) {
+					last := results[index]
+					results[index].Key = string(key)
+					results[index].Distance = distance
+					index++
+					for index < len(results) {
+						results[index], last = last, results[index]
+						index++
+					}
+				}
+			}
+			key, value = cursor.Next()
+		}
+		return nil
+	})
+	return results, err
 }
 
 // Mine is for mining the database

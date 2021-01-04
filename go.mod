@@ -9,4 +9,5 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
 	github.com/pointlander/compress v1.1.1-0.20190518213731-ff44bd196cc3
+	github.com/texttheater/golang-levenshtein/levenshtein v0.0.0-20200805054039-cae8b0eaed6c
 )
