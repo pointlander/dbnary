@@ -20,7 +20,9 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
+	"github.com/julienschmidt/httprouter"
 	"github.com/knakk/rdf"
+
 	"github.com/pointlander/dbnary"
 	"github.com/pointlander/dbnary/utils"
 )
@@ -252,45 +254,55 @@ type Dictionary struct {
 	entryTemplate *template.Template
 }
 
+// Word outputs the page for a word
+func (d *Dictionary) Word(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	lang, word := ps.ByName("language"), ps.ByName("word")
+	if _, ok := d.languages[lang]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	entry, err := d.db.LookupWordForLanguage(word, lang)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	err = d.entryTemplate.Execute(w, entry)
+	if err != nil {
+		return
+	}
+}
+
+// API outputs the api representation of a word
+func (d *Dictionary) API(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	lang, word := ps.ByName("language"), ps.ByName("word")
+	if _, ok := d.languages[lang]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	entry, err := d.db.LookupWordForLanguage(word, lang)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(entry)
+	if err != nil {
+		return
+	}
+}
+
 // ServeHTTP server up a dictionary entry
 func (d *Dictionary) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Split(r.URL.Path, "/")
 	switch len(path) {
 	case 3:
-		lang, word := path[1], path[2]
-		if _, ok := d.languages[lang]; !ok {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		entry, err := d.db.LookupWordForLanguage(word, lang)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		err = d.entryTemplate.Execute(w, entry)
-		if err != nil {
-			return
-		}
+
 	case 4:
 		if path[1] != "api" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		lang, word := path[2], path[3]
-		if _, ok := d.languages[lang]; !ok {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		entry, err := d.db.LookupWordForLanguage(word, lang)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		err = json.NewEncoder(w).Encode(entry)
-		if err != nil {
-			return
-		}
+
 	}
 }
 
@@ -320,14 +332,18 @@ func Server(db *dbnary.DB) {
 	if err != nil {
 		panic(err)
 	}
+
 	dictionary := Dictionary{
 		db:            db,
 		languages:     languages,
 		entryTemplate: entryTemplate,
 	}
+	router := httprouter.New()
+	router.GET("/word/:language/:word", dictionary.Word)
+	router.GET("/api/:language/:word", dictionary.API)
 	server := http.Server{
 		Addr:    ":8080",
-		Handler: &dictionary,
+		Handler: router,
 	}
 	err = server.ListenAndServe()
 	if err != nil {
