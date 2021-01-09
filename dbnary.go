@@ -159,9 +159,10 @@ func (db *DB) GetEntry(key string) (entry *Entry, err error) {
 // GetEntryForLanguage looks up an entry for a given language
 func (db *DB) GetEntryForLanguage(key, language string, entry *Entry) (valid bool, err error) {
 	err = db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(language))
+		k := language + string([]rune(key)[0])
+		bucket := tx.Bucket([]byte(k))
 		if bucket == nil {
-			return fmt.Errorf("invalid language: %s", language)
+			return nil
 		}
 		value := bucket.Get([]byte(key))
 		if len(value) > 0 {
@@ -201,10 +202,12 @@ func (db *DB) SearchWordForLanguage(query, language string) ([]Result, error) {
 	for i := range results {
 		results[i].Distance = math.MaxInt64
 	}
+	query = strings.Replace(query, " ", "_", -1)
 	err := db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(language))
+		k := language + string([]rune(query)[0])
+		bucket := tx.Bucket([]byte(k))
 		if bucket == nil {
-			return fmt.Errorf("invalid language: %s", language)
+			return fmt.Errorf("invalid language: %s", k)
 		}
 		cursor := bucket.Cursor()
 		key, value := cursor.First()
@@ -398,8 +401,11 @@ func (db *DB) PrintEntry(key, spaces, lang string, max, depth int) {
 // WriteNodes writes the nodes into lang
 func (db *DB) WriteNodes(lang string, nodes *Node) error {
 	return db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(lang))
 		for nodes != nil {
+			bucket, err := tx.CreateBucketIfNotExists([]byte(lang + string([]rune(nodes.Key)[0])))
+			if err != nil {
+				return err
+			}
 			value, err := proto.Marshal(&nodes.Entry)
 			if err != nil {
 				return err

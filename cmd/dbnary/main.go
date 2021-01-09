@@ -84,7 +84,7 @@ func Build(db *dbnary.DB, file utils.TTLFile) {
 			if !found {
 				_, err1 := db.GetEntryForLanguage(key, lang, &node.Entry)
 				if err1 != nil {
-					panic(err)
+					panic(err1)
 				}
 			}
 
