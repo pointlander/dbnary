@@ -99,7 +99,7 @@ const EntryTemplate = `<html>
 		<ul>
 {{range $translations}}
 {{if supports $language}}
-			<li><a href="/{{$language}}/{{.}}">{{clean .}}</a></li>
+			<li><a href="/word/{{$language}}/{{.}}">{{clean .}}</a></li>
 {{else}}
 			<li>{{clean .}}</li>
 {{end}}
